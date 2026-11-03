@@ -1,0 +1,5 @@
+{
+  "_readme": "NEXORA-X number table. Fill 'digits' with your real number symbols, for example {\"latin\": \"0\", \"symbol\": \"<your symbol>\"}. Intentionally empty until you provide your table.",
+  "version": 1,
+  "digits": []
+}

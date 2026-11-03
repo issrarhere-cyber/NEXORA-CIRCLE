@@ -1,0 +1,15 @@
+*.iml
+.gradle/
+build/
+local.properties
+.idea/
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.jks
+*.keystore
+# Firebase config is added in Stage 2; keep real keys out of public repos
+# google-services.json

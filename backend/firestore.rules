@@ -1,0 +1,110 @@
+rules_version = '2';
+
+// NEXORA-CIRCLE Firestore security rules (Stage 1 baseline).
+// Principle: deny everything by default, then open only what each feature needs.
+// These rules must be tested with the Firebase Emulator before launch (see docs/ARCHITECTURE.md).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function validText(value, maxLen) {
+      return value is string && value.size() > 0 && value.size() <= maxLen;
+    }
+
+    // ---------- users ----------
+    // Public profile only. Private data (email, tokens) lives in /users/{uid}/private/*.
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isOwner(uid)
+        && validText(request.resource.data.username, 30)
+        && validText(request.resource.data.displayName, 50)
+        && request.resource.data.keys().hasOnly(
+             ['username', 'displayName', 'bio', 'photoUrl', 'createdAt']);
+      allow update: if isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['displayName', 'bio', 'photoUrl'])
+        && validText(request.resource.data.displayName, 50)
+        && (!('bio' in request.resource.data) || request.resource.data.bio.size() <= 300);
+      allow delete: if false;
+
+      match /private/{doc} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // People this user follows. Only the owner writes their own follow list.
+      match /following/{targetUid} {
+        allow read: if signedIn();
+        allow create, delete: if isOwner(uid) && targetUid != uid;
+        allow update: if false;
+      }
+    }
+
+    // ---------- posts ----------
+    match /posts/{postId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && validText(request.resource.data.text, 2000);
+      allow update: if signedIn()
+        && resource.data.authorId == request.auth.uid
+        && request.resource.data.authorId == resource.data.authorId;
+      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.authorId == request.auth.uid
+          && validText(request.resource.data.text, 1000);
+        allow update: if false;
+        allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+      }
+
+      match /likes/{uid} {
+        allow read: if signedIn();
+        allow create, delete: if isOwner(uid);
+        allow update: if false;
+      }
+    }
+
+    // ---------- chats (real-time messaging) ----------
+    // A chat document lists its members; only members may read or write inside it.
+    match /chats/{chatId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if signedIn()
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.members.size() >= 2
+        && request.resource.data.members.size() <= 100;
+      allow update: if signedIn() && request.auth.uid in resource.data.members;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+        allow create: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+          && request.resource.data.senderId == request.auth.uid
+          && validText(request.resource.data.text, 4000);
+        // Only delivery/read receipts may change, never the message content.
+        allow update: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['deliveredTo', 'readBy']);
+        allow delete: if signedIn() && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // ---------- everything else is denied ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

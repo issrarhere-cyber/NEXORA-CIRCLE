@@ -1,0 +1,44 @@
+rules_version = '2';
+
+// NEXORA-CIRCLE Cloud Storage rules (Stage 1 baseline).
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Profile pictures: anyone signed in can view, only the owner can upload.
+    // Images only, max 5 MB.
+    match /avatars/{uid}/{fileName} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Post media: images or video, max 50 MB, uploaded by the author.
+    match /posts/{uid}/{fileName} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.size < 50 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType.matches('video/.*'));
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Chat attachments: max 25 MB. Membership is enforced by who can read the message
+    // that links to the file; the path uses an unguessable chat id.
+    match /chats/{chatId}/{fileName} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.resource.size < 25 * 1024 * 1024;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

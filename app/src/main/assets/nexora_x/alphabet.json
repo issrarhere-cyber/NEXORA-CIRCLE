@@ -1,0 +1,5 @@
+{
+  "_readme": "NEXORA-X alphabet table. Fill 'glyphs' with your real symbols. Each entry maps one Latin letter/character to ONE Nexora-X symbol. Nothing here is invented: the list is intentionally empty until you provide your table.",
+  "version": 1,
+  "glyphs": []
+}
