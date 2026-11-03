@@ -5,7 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Loads the Nexora-X tables from assets/nexora_x/*.json.
+ * Loads the Nexora-X tables from the JSON files in the assets folder nexora_x.
  * The language lives only in those files; no symbol is hard-coded here.
  */
 object NexoraXRepository {
