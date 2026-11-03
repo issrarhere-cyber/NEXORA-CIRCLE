@@ -17,6 +17,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.nexora.circle.ui.screens.LoginScreen
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,7 +39,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 }
 
 @Composable
-fun NexoraApp() {
+fun NexoraApp () {
     var selected by rememberSaveable { mutableStateOf(Tab.Orbit) }
 
     StarfieldBackground {
