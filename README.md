@@ -1,30 +1,42 @@
-# NEXORA-CIRCLE
+# nexora-server
 
-**Connect beyond the universe.** A space and galaxy themed social network for Android.
+Backend for NEXORA-CIRCLE.
 
-## Current status: Stage 1
+- **Comms**: real-time chat (Socket.IO)
+- **Orbit**: text posts and likes (REST)
 
-Working now:
-- Android app (Kotlin + Jetpack Compose) with animated galaxy background and dark theme
-- Bottom navigation: Orbit, Comms, Arcade, Nexora-X, Me
-- Nexora-X translator and keyboard, driven by JSON tables (tables are empty until you supply your language)
-- Firebase security rules for users, posts, chats and file storage
-- GitHub Actions workflow that builds an installable APK
+## Run locally
 
-Not built yet (clearly marked as placeholders inside the app): login, profiles, feed,
-messaging, groups, notifications, games. See `docs/ARCHITECTURE.md` for the stage plan.
+```
+npm install
+npm start
+```
 
-## Get the APK using only your phone
+Server starts on port 3000 (or `PORT` env var).
 
-1. Create a new empty repository on GitHub named `NEXORA-CIRCLE` (new, separate from your other projects).
-2. Upload all files from this project to it, keeping the folder structure.
-3. Open the repository's **Actions** tab, choose **Build Android APK**, and tap **Run workflow**.
-4. When the run turns green, open it and download the artifact **NEXORA-CIRCLE-debug-apk**.
-5. Unzip it, open `app-debug.apk` on your phone and allow "install unknown apps" when asked.
+## API
 
-If the build turns red, open the failed run and send me the error text. I will fix it.
+| Method | Path | Body | What it does |
+|---|---|---|---|
+| GET | `/` | | status check |
+| GET | `/health` | | returns `ok` |
+| GET | `/api/posts` | | latest posts, newest first |
+| POST | `/api/posts` | `{ "author": "name", "text": "hello" }` | create post |
+| POST | `/api/posts/:id/like` | | like a post |
+| GET | `/api/messages` | | last 50 chat messages |
 
-## Adding your Nexora-X language
+## Socket.IO events
 
-Edit `app/src/main/assets/nexora_x/alphabet.json` and `numbers.json`.
-Instructions are in `app/src/main/assets/nexora_x/README.md`.
+- client sends `message` with `{ author, text }` (optional ack callback)
+- server broadcasts `message` (new chat message)
+- server broadcasts `post` and `post:update` (feed changes)
+- server broadcasts `online` (number of connected users)
+
+## Deploy (Render, free)
+
+1. Push this repo to GitHub.
+2. Render.com -> New -> Web Service -> pick the repo.
+3. Build command: `npm install`, Start command: `npm start`.
+4. Use the URL Render gives you (https://....onrender.com) in the app.
+
+Note: free hosting sleeps when idle and may reset `data.json` on restart. A real database comes later.
