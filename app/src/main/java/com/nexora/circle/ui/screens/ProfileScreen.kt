@@ -39,6 +39,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nexora.circle.ui.components.GlassCard
@@ -120,7 +122,13 @@ fun ProfileScreen() {
                             modifier = Modifier.fillMaxSize(),
                         )
                     } else {
-                        Text(initial, style = MaterialTheme.typography.headlineLarge, color = NexoraColors.SpaceBlack)
+                        Text(
+                            initial,
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontFamily = FontFamily.SansSerif,
+                            fontWeight = FontWeight.Bold,
+                            color = NexoraColors.SpaceBlack,
+                        )
                     }
                 }
 
