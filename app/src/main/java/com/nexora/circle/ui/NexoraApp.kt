@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.nexora.circle.ui.components.StarfieldBackground
+import com.nexora.circle.ui.screens.CommsScreen
 import com.nexora.circle.ui.screens.NexoraXScreen
 import com.nexora.circle.ui.screens.PlaceholderScreen
 import com.nexora.circle.ui.screens.ProfileScreen
@@ -78,21 +79,12 @@ fun NexoraApp() {
                             "Notifications",
                         ),
                     )
-                    Tab.Comms -> PlaceholderScreen(
-                        title = "Comms (Messages)",
-                        stage = "Stage 4",
-                        planned = listOf(
-                            "Real-time one-to-one and group chat on a live backend",
-                            "Emoji, images and files",
-                            "Online status, delivered and read indicators",
-                            "Push notifications",
-                        ),
-                    )
+                    Tab.Comms -> CommsScreen()
                     Tab.Arcade -> PlaceholderScreen(
                         title = "Arcade (Games)",
                         stage = "Stage 6",
                         planned = listOf(
-                            "Space puzzles, alien mysteries, brain and memory challenges",
+                            "Space puzzles, alien mysteries",
                             "Nexora-X decoding games",
                             "Multiplayer quiz battles",
                             "Friends leaderboard and daily challenges",
