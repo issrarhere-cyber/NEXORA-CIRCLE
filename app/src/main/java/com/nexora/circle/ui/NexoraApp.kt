@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.nexora.circle.ui.components.StarfieldBackground
 import com.nexora.circle.ui.screens.CommsScreen
 import com.nexora.circle.ui.screens.NexoraXScreen
+import com.nexora.circle.ui.screens.OrbitScreen
 import com.nexora.circle.ui.screens.PlaceholderScreen
 import com.nexora.circle.ui.screens.ProfileScreen
 import com.nexora.circle.ui.theme.NexoraColors
@@ -68,16 +69,10 @@ fun NexoraApp() {
         ) { padding: PaddingValues ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (selected) {
-                    Tab.Orbit -> PlaceholderScreen(
-                        title = "Orbit (Feed)",
-                        stage = "Stage 3",
-                        planned = listOf(
-                            "Text, image and video posts",
-                            "Likes, comments, sharing",
-                            "Stories",
-                            "Groups and communities, search and discovery",
-                            "Notifications",
-                        ),
+                    Tab.Orbit -> OrbitScreen(
+                        onOpenComms = { selected = Tab.Comms },
+                        onOpenNexoraX = { selected = Tab.NexoraX },
+                        onOpenProfile = { selected = Tab.Profile },
                     )
                     Tab.Comms -> CommsScreen()
                     Tab.Arcade -> PlaceholderScreen(
