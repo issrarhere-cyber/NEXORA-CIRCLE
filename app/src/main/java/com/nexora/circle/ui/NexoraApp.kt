@@ -17,7 +17,6 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import com.nexora.circle.ui.screens.LoginScreen
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -28,6 +27,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.nexora.circle.ui.components.StarfieldBackground
 import com.nexora.circle.ui.screens.NexoraXScreen
 import com.nexora.circle.ui.screens.PlaceholderScreen
+import com.nexora.circle.ui.screens.ProfileScreen
 import com.nexora.circle.ui.theme.NexoraColors
 
 private enum class Tab(val label: String, val icon: ImageVector) {
@@ -39,7 +39,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 }
 
 @Composable
-fun NexoraApp () {
+fun NexoraApp() {
     var selected by rememberSaveable { mutableStateOf(Tab.Orbit) }
 
     StarfieldBackground {
@@ -99,16 +99,7 @@ fun NexoraApp () {
                         ),
                     )
                     Tab.NexoraX -> NexoraXScreen()
-                    Tab.Profile -> PlaceholderScreen(
-                        title = "Profile",
-                        stage = "Stage 2",
-                        planned = listOf(
-                            "Registration and secure login",
-                            "Profile and profile picture",
-                            "Follow and friends",
-                            "Privacy settings",
-                        ),
-                    )
+                    Tab.Profile -> ProfileScreen()
                 }
             }
         }
