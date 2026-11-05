@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "46625270114",
+    "project_id": "nexora-circle",
+    "storage_bucket": "nexora-circle.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:46625270114:android:0dc66a2220dd17b215a43b",
+        "android_client_info": {
+          "package_name": "com.nexora.circle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA54XtZoFopkdvWF6pb3uXLUXUVOQPB3I4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
