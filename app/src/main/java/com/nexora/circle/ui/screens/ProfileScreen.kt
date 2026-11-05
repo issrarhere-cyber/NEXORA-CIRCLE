@@ -49,8 +49,29 @@ import java.io.File
 
 private const val PREFS_NAME = "nexora_profile"
 private const val KEY_NAME = "name"
+private const val KEY_USERNAME = "username"
 private const val KEY_BIO = "bio"
 private const val KEY_PHOTO = "photo_path"
+
+private const val NAME_MAX = 50
+private const val USERNAME_PREFIX = "X."
+private const val USERNAME_MIN = 3
+private const val USERNAME_MAX = 28
+
+// "X." ke baad ka hissa saaf karta hai: small letters, numbers, . aur _
+private fun cleanUsername(input: String): String =
+    input.lowercase()
+        .removePrefix("x.")
+        .filter { it in 'a'..'z' || it in '0'..'9' || it == '.' || it == '_' }
+        .take(USERNAME_MAX)
+
+private fun usernameError(name: String): String? = when {
+    name.isEmpty() -> null
+    name.length < USERNAME_MIN -> "Kam se kam $USERNAME_MIN characters chahiye"
+    name.contains("..") -> "Do dots saath mein nahi ho sakte"
+    name.startsWith(".") || name.endsWith(".") -> "Dot se shuru ya khatam nahi ho sakta"
+    else -> null
+}
 
 @Composable
 fun ProfileScreen() {
@@ -59,8 +80,10 @@ fun ProfileScreen() {
     val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
 
     var savedName by remember { mutableStateOf(prefs.getString(KEY_NAME, "") ?: "") }
+    var savedUsername by remember { mutableStateOf(prefs.getString(KEY_USERNAME, "") ?: "") }
     var savedBio by remember { mutableStateOf(prefs.getString(KEY_BIO, "") ?: "") }
     var name by remember { mutableStateOf(savedName) }
+    var username by remember { mutableStateOf(savedUsername) }
     var bio by remember { mutableStateOf(savedBio) }
     var editing by remember { mutableStateOf(false) }
 
@@ -87,6 +110,11 @@ fun ProfileScreen() {
             photoPath = file.absolutePath
         }
     }
+
+    val usernameErr = usernameError(username)
+    val canSave = name.trim().isNotEmpty() &&
+        username.length >= USERNAME_MIN &&
+        usernameErr == null
 
     Column(
         modifier = Modifier
@@ -136,14 +164,44 @@ fun ProfileScreen() {
                     Spacer(Modifier.height(8.dp))
                     Text("Tap photo to change", color = NexoraColors.NebulaPink)
                     Spacer(Modifier.height(12.dp))
+
+                    // Display name: poora naam, koi restriction nahi (max 50)
                     OutlinedTextField(
                         value = name,
-                        onValueChange = { name = it.take(40) },
+                        onValueChange = { name = it.take(NAME_MAX) },
                         label = { Text("Display name") },
-                        singleLine = true,
+                        singleLine = false,
+                        maxLines = 2,
                         textStyle = TextStyle(color = NexoraColors.StarWhite),
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Text(
+                        "${name.length}/$NAME_MAX",
+                        color = NexoraColors.Muted,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.End,
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Username: "X." fixed, user sirf baad ka hissa likhta hai
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = cleanUsername(it) },
+                        label = { Text("Username") },
+                        prefix = { Text(USERNAME_PREFIX, color = NexoraColors.PlasmaCyan) },
+                        singleLine = true,
+                        isError = usernameErr != null,
+                        textStyle = TextStyle(color = NexoraColors.StarWhite),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        usernameErr ?: "Sirf small letters, numbers, . aur _",
+                        color = if (usernameErr != null) MaterialTheme.colorScheme.error
+                        else NexoraColors.Muted,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = bio,
@@ -154,18 +212,24 @@ fun ProfileScreen() {
                     )
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = {
-                            savedName = name.trim()
-                            savedBio = bio.trim()
-                            prefs.edit()
-                                .putString(KEY_NAME, savedName)
-                                .putString(KEY_BIO, savedBio)
-                                .apply()
-                            focus.clearFocus()
-                            editing = false
-                        }) { Text("Save") }
+                        Button(
+                            enabled = canSave,
+                            onClick = {
+                                savedName = name.trim().replace(Regex("\\s+"), " ")
+                                savedUsername = username
+                                savedBio = bio.trim()
+                                prefs.edit()
+                                    .putString(KEY_NAME, savedName)
+                                    .putString(KEY_USERNAME, savedUsername)
+                                    .putString(KEY_BIO, savedBio)
+                                    .apply()
+                                focus.clearFocus()
+                                editing = false
+                            },
+                        ) { Text("Save") }
                         OutlinedButton(onClick = {
                             name = savedName
+                            username = savedUsername
                             bio = savedBio
                             focus.clearFocus()
                             editing = false
@@ -173,10 +237,19 @@ fun ProfileScreen() {
                     }
                 } else {
                     Spacer(Modifier.height(12.dp))
+                    // Display name upar, bada
                     Text(
                         if (savedName.isBlank()) "No name set yet" else savedName,
                         style = MaterialTheme.typography.titleLarge,
                         color = NexoraColors.StarWhite,
+                        textAlign = TextAlign.Center,
+                    )
+                    // Username neeche: X.israr
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        if (savedUsername.isBlank()) "Username not set"
+                        else USERNAME_PREFIX + savedUsername,
+                        color = NexoraColors.PlasmaCyan,
                         textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(4.dp))
@@ -188,6 +261,7 @@ fun ProfileScreen() {
                     Spacer(Modifier.height(16.dp))
                     OutlinedButton(onClick = {
                         name = savedName
+                        username = savedUsername
                         bio = savedBio
                         editing = true
                     }) { Text("Edit profile") }
