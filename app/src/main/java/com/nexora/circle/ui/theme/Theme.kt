@@ -6,14 +6,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 object NexoraColors {
-    val SpaceBlack = Color(0xFF05060F)
-    val DeepNavy = Color(0xFF0B0D24)
-    val Panel = Color(0xCC12163A)
-    val NebulaViolet = Color(0xFF7C5CFF)
-    val NebulaPink = Color(0xFFFF5CA8)
-    val PlasmaCyan = Color(0xFF2DE2E6)
-    val StarWhite = Color(0xFFEAF0FF)
-    val Muted = Color(0xFF8E96C7)
+    val SpaceBlack = Color(0xFF020208)
+    val DeepNavy = Color(0xFF070818)
+    val Panel = Color(0xCC0B0D22)
+    val NebulaViolet = Color(0xFF8B6BFF)
+    val NebulaPink = Color(0xFFFF4FB0)
+    val PlasmaCyan = Color(0xFF00F0FF)
+    val StarWhite = Color(0xFFF2F6FF)
+    val Muted = Color(0xFF9AA3D6)
 }
 
 private val NexoraDarkScheme = darkColorScheme(
