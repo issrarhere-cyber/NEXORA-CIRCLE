@@ -35,6 +35,7 @@ import com.nexora.circle.ui.screens.OrbitScreen
 import com.nexora.circle.ui.screens.PlaceholderScreen
 import com.nexora.circle.ui.screens.ProfileScreen
 import com.nexora.circle.ui.screens.SearchScreen
+import com.nexora.circle.ui.screens.UserProfileScreen
 import com.nexora.circle.ui.theme.NexoraColors
 
 private enum class Tab(val label: String) {
@@ -45,7 +46,6 @@ private enum class Tab(val label: String) {
     Profile("Me"),
 }
 
-// Original icons for the bottom bar
 @Composable
 private fun TabIcon(tab: Tab, tint: Color) {
     when (tab) {
@@ -102,6 +102,7 @@ private fun TabIcon(tab: Tab, tint: Color) {
 fun NexoraApp() {
     var selected by rememberSaveable { mutableStateOf(Tab.Orbit) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
+    var profileUid by rememberSaveable { mutableStateOf("") }
 
     StarfieldBackground {
         Scaffold(
@@ -114,6 +115,7 @@ fun NexoraApp() {
                             onClick = {
                                 selected = tab
                                 showSearch = false
+                                profileUid = ""
                             },
                             icon = {
                                 TabIcon(
@@ -136,18 +138,25 @@ fun NexoraApp() {
         ) { padding: PaddingValues ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (selected) {
-                    Tab.Orbit -> if (showSearch) {
-                        SearchScreen(
-                            onBack = { showSearch = false },
-                            onUserClick = { showSearch = false },
-                        )
-                    } else {
-                        OrbitScreen(
-                            onOpenComms = { selected = Tab.Comms },
-                            onOpenNexoraX = { selected = Tab.NexoraX },
-                            onOpenProfile = { selected = Tab.Profile },
-                            onOpenSearch = { showSearch = true },
-                        )
+                    Tab.Orbit -> {
+                        if (profileUid.isNotEmpty()) {
+                            UserProfileScreen(
+                                uid = profileUid,
+                                onBack = { profileUid = "" },
+                            )
+                        } else if (showSearch) {
+                            SearchScreen(
+                                onBack = { showSearch = false },
+                                onUserClick = { uid -> profileUid = uid },
+                            )
+                        } else {
+                            OrbitScreen(
+                                onOpenComms = { selected = Tab.Comms },
+                                onOpenNexoraX = { selected = Tab.NexoraX },
+                                onOpenProfile = { selected = Tab.Profile },
+                                onOpenSearch = { showSearch = true },
+                            )
+                        }
                     }
                     Tab.Comms -> CommsScreen()
                     Tab.Arcade -> PlaceholderScreen(
