@@ -131,6 +131,15 @@ fun ProfileScreen() {
                     .putLong(KEY_NAME_TIME, nameChangedAt)
                     .putLong(KEY_USERNAME_TIME, usernameChangedAt)
                     .apply()
+
+                // Search ke liye lowercase fields (purane account ke liye bhi)
+                db.collection("users").document(uid).set(
+                    mapOf(
+                        "nameLower" to savedName.lowercase(),
+                        "usernameLower" to savedUsername.lowercase(),
+                    ),
+                    SetOptions.merge()
+                ).await()
             } else {
                 if (savedName.isBlank()) {
                     val dn = user?.displayName.orEmpty()
@@ -144,6 +153,8 @@ fun ProfileScreen() {
                         mapOf(
                             "name" to savedName,
                             "username" to savedUsername,
+                            "nameLower" to savedName.lowercase(),
+                            "usernameLower" to savedUsername.lowercase(),
                             "bio" to savedBio,
                             "nameChangedAt" to nameChangedAt,
                             "usernameChangedAt" to usernameChangedAt,
@@ -323,6 +334,8 @@ fun ProfileScreen() {
                                     val data = mapOf(
                                         "name" to savedName,
                                         "username" to savedUsername,
+                                        "nameLower" to savedName.lowercase(),
+                                        "usernameLower" to savedUsername.lowercase(),
                                         "bio" to savedBio,
                                         "nameChangedAt" to nameChangedAt,
                                         "usernameChangedAt" to usernameChangedAt,
