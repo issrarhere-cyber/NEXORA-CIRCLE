@@ -1,58 +1,88 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.gms.google-services")
+package com.nexora.circle.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import com.nexora.circle.ui.theme.NexoraColors
+
+@Composable
+fun OrbitTopBar(
+    signalCount: Int = 0,
+    beamCount: Int = 0,
+    notifCount: Int = 0,
+    onProfile: () -> Unit = {},
+    onSearch: () -> Unit = {},
+    onSignal: () -> Unit = {},
+    onBeam: () -> Unit = {},
+    onNotif: () -> Unit = {},
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(NexoraColors.SpaceBlack)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onProfile) {
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .background(NexoraColors.PlasmaCyan, CircleShape)
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        BarIcon(Icons.Outlined.Search, "Search", 0, onSearch)
+        BarIcon(Icons.Outlined.PersonAdd, "Signal", signalCount, onSignal)
+        BarIcon(Icons.AutoMirrored.Outlined.Send, "Beam", beamCount, onBeam)
+        BarIcon(Icons.Outlined.Notifications, "Notifications", notifCount, onNotif)
+    }
 }
 
-android {
-    namespace = "com.nexora.circle"
-    compileSdk = 34
-
-    defaultConfig {
-        applicationId = "com.nexora.circle"
-        minSdk = 26
-        targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
-    }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = false
+@Composable
+private fun BarIcon(
+    icon: ImageVector,
+    label: String,
+    count: Int,
+    onClick: () -> Unit
+) {
+    IconButton(onClick = onClick) {
+        BadgedBox(
+            badge = {
+                if (count > 0) {
+                    Badge(
+                        containerColor = NexoraColors.PlasmaCyan,
+                        contentColor = NexoraColors.SpaceBlack
+                    ) {
+                        Text(if (count > 99) "99+" else count.toString())
+                    }
+                }
+            }
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = NexoraColors.StarWhite
+            )
         }
     }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    buildFeatures {
-        compose = true
-    }
-}
-
-dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.09.00")
-    implementation(composeBom)
-
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.activity:activity-compose:1.9.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-core")
-
-    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
 }
