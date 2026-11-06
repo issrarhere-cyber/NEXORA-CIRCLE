@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -43,55 +44,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.nexora.circle.ui.components.NexoraIcon
 import com.nexora.circle.ui.components.NxIcon
 import com.nexora.circle.ui.theme.NexoraColors
-import org.json.JSONArray
-import org.json.JSONObject
-
-private const val ORBIT_PREFS = "nexora_orbit"
-private const val KEY_POSTS = "posts"
 
 private data class Post(
-    val id: Long,
+    val id: String,
+    val authorUid: String,
+    val name: String,
+    val handle: String,
     val text: String,
     val time: Long,
-    val liked: Boolean,
+    val likes: List<String>,
 )
-
-private fun loadPosts(context: Context): List<Post> {
-    val raw = context.getSharedPreferences(ORBIT_PREFS, Context.MODE_PRIVATE)
-        .getString(KEY_POSTS, null) ?: return emptyList()
-    return try {
-        val arr = JSONArray(raw)
-        List(arr.length()) {
-            val o = arr.getJSONObject(it)
-            Post(
-                id = o.optLong("id"),
-                text = o.optString("text"),
-                time = o.optLong("time"),
-                liked = o.optBoolean("liked"),
-            )
-        }.filter { it.text.isNotBlank() }
-    } catch (e: Exception) {
-        emptyList()
-    }
-}
-
-private fun savePosts(context: Context, posts: List<Post>) {
-    val arr = JSONArray()
-    posts.forEach {
-        arr.put(
-            JSONObject()
-                .put("id", it.id)
-                .put("text", it.text)
-                .put("time", it.time)
-                .put("liked", it.liked)
-        )
-    }
-    context.getSharedPreferences(ORBIT_PREFS, Context.MODE_PRIVATE)
-        .edit().putString(KEY_POSTS, arr.toString()).apply()
-}
 
 private fun ago(time: Long): String {
     val m = (System.currentTimeMillis() - time) / 60000
@@ -132,8 +101,14 @@ fun OrbitScreen(
     onOpenProfile: () -> Unit,
 ) {
     val context = LocalContext.current
+    val user = remember { FirebaseAuth.getInstance().currentUser }
+    val myUid = user?.uid.orEmpty()
+    val db = remember { FirebaseFirestore.getInstance() }
     val profile = remember { context.getSharedPreferences("nexora_profile", Context.MODE_PRIVATE) }
-    val name = remember { profile.getString("name", "")?.trim().orEmpty() }
+    val name = remember {
+        profile.getString("name", "")?.trim().orEmpty()
+            .ifBlank { user?.displayName.orEmpty() }
+    }
     val handle = remember { profile.getString("username", "")?.trim().orEmpty() }
     val photo = remember {
         profile.getString("photo_path", null)?.let {
@@ -143,15 +118,47 @@ fun OrbitScreen(
     }
     val initial = (name.firstOrNull()?.uppercaseChar() ?: '?').toString()
 
-    val posts = remember { mutableStateListOf<Post>().apply { addAll(loadPosts(context)) } }
+    val posts = remember { mutableStateListOf<Post>() }
     var tab by remember { mutableStateOf(0) }
     var composing by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf("") }
+
+    DisposableEffect(myUid) {
+        val reg = db.collection("posts")
+            .orderBy("time", Query.Direction.DESCENDING)
+            .limit(100)
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    errorMsg = "Could not load posts: ${err.localizedMessage}"
+                    return@addSnapshotListener
+                }
+                if (snap != null) {
+                    errorMsg = ""
+                    val list = snap.documents.mapNotNull { d ->
+                        val text = d.getString("text") ?: return@mapNotNull null
+                        @Suppress("UNCHECKED_CAST")
+                        val likes = (d.get("likes") as? List<String>) ?: emptyList()
+                        Post(
+                            id = d.id,
+                            authorUid = d.getString("authorUid") ?: "",
+                            name = d.getString("authorName") ?: "",
+                            handle = d.getString("authorHandle") ?: "",
+                            text = text,
+                            time = d.getLong("time") ?: 0L,
+                            likes = likes,
+                        )
+                    }
+                    posts.clear()
+                    posts.addAll(list)
+                }
+            }
+        onDispose { reg.remove() }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // Top bar: profile photo | logo | chat
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -171,7 +178,6 @@ fun OrbitScreen(
                 }
             }
 
-            // Tabs
             Row(modifier = Modifier.fillMaxWidth()) {
                 listOf("For you", "Following").forEachIndexed { i, label ->
                     Column(
@@ -206,10 +212,17 @@ fun OrbitScreen(
                     .background(NexoraColors.Muted.copy(alpha = 0.25f))
             )
 
-            // Feed
+            if (errorMsg.isNotEmpty()) {
+                Text(
+                    errorMsg,
+                    color = NexoraColors.NebulaPink,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                )
+            }
+
             if (tab == 1) {
                 Text(
-                    "Posts from people you follow will appear here. This needs online accounts, coming soon.",
+                    "Posts from people you follow will appear here. Coming soon.",
                     color = NexoraColors.Muted,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(32.dp),
@@ -224,21 +237,27 @@ fun OrbitScreen(
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(posts, key = { it.id }) { post ->
+                        val mine = post.authorUid == myUid
+                        val liked = post.likes.contains(myUid)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Avatar(photo, initial, 40.dp)
+                            Avatar(
+                                if (mine) photo else null,
+                                (post.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
+                                40.dp,
+                            )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    name.ifBlank { "Explorer" },
+                                    post.name.ifBlank { "Explorer" },
                                     color = NexoraColors.StarWhite,
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Text(
-                                    (if (handle.isNotBlank()) "X.$handle · " else "") + ago(post.time),
+                                    (if (post.handle.isNotBlank()) "X.${post.handle} · " else "") + ago(post.time),
                                     color = NexoraColors.Muted,
                                 )
                                 Spacer(Modifier.height(6.dp))
@@ -248,30 +267,36 @@ fun OrbitScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(20.dp),
                                 ) {
-                                    Box(
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         modifier = Modifier.clickable {
-                                            val i = posts.indexOfFirst { it.id == post.id }
-                                            if (i >= 0) {
-                                                posts[i] = posts[i].copy(liked = !posts[i].liked)
-                                                savePosts(context, posts)
-                                            }
-                                        }
+                                            db.collection("posts").document(post.id).update(
+                                                "likes",
+                                                if (liked) FieldValue.arrayRemove(myUid)
+                                                else FieldValue.arrayUnion(myUid)
+                                            )
+                                        },
                                     ) {
                                         NexoraIcon(
                                             NxIcon.Heart,
-                                            tint = if (post.liked) NexoraColors.NebulaPink else NexoraColors.Muted,
+                                            tint = if (liked) NexoraColors.NebulaPink else NexoraColors.Muted,
                                             iconSize = 22.dp,
-                                            filled = post.liked,
+                                            filled = liked,
+                                        )
+                                        if (post.likes.isNotEmpty()) {
+                                            Text("${post.likes.size}", color = NexoraColors.Muted)
+                                        }
+                                    }
+                                    if (mine) {
+                                        Text(
+                                            "Delete",
+                                            color = NexoraColors.Muted,
+                                            modifier = Modifier.clickable {
+                                                db.collection("posts").document(post.id).delete()
+                                            },
                                         )
                                     }
-                                    Text(
-                                        "Delete",
-                                        color = NexoraColors.Muted,
-                                        modifier = Modifier.clickable {
-                                            posts.removeAll { it.id == post.id }
-                                            savePosts(context, posts)
-                                        },
-                                    )
                                 }
                             }
                         }
@@ -286,7 +311,6 @@ fun OrbitScreen(
             }
         }
 
-        // Floating + button
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -319,11 +343,20 @@ fun OrbitScreen(
             },
             confirmButton = {
                 TextButton(
-                    enabled = draft.isNotBlank(),
+                    enabled = draft.isNotBlank() && myUid.isNotEmpty(),
                     onClick = {
-                        val now = System.currentTimeMillis()
-                        posts.add(0, Post(now, draft.trim(), now, false))
-                        savePosts(context, posts)
+                        db.collection("posts").add(
+                            mapOf(
+                                "authorUid" to myUid,
+                                "authorName" to name,
+                                "authorHandle" to handle,
+                                "text" to draft.trim(),
+                                "time" to System.currentTimeMillis(),
+                                "likes" to emptyList<String>(),
+                            )
+                        ).addOnFailureListener {
+                            errorMsg = "Could not post: ${it.localizedMessage}"
+                        }
                         composing = false
                     },
                 ) { Text("Post") }
