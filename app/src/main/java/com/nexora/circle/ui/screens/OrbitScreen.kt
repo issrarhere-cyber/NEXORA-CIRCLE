@@ -103,6 +103,7 @@ fun OrbitScreen(
     onOpenComms: () -> Unit,
     onOpenNexoraX: () -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenSearch: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val user = remember { FirebaseAuth.getInstance().currentUser }
@@ -179,11 +180,16 @@ fun OrbitScreen(
                     Avatar(photo, initial, 36.dp)
                 }
                 NexoraIcon(NxIcon.Orbit, tint = NexoraColors.PlasmaCyan, iconSize = 32.dp)
-                Box(
-                    modifier = Modifier.size(36.dp).clickable { onOpenComms() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    NexoraIcon(NxIcon.Chat, tint = NexoraColors.StarWhite, iconSize = 26.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { onOpenSearch() }) {
+                        Text("Search", color = NexoraColors.StarWhite)
+                    }
+                    Box(
+                        modifier = Modifier.size(36.dp).clickable { onOpenComms() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        NexoraIcon(NxIcon.Chat, tint = NexoraColors.StarWhite, iconSize = 26.dp)
+                    }
                 }
             }
 
