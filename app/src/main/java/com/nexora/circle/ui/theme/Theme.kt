@@ -12,8 +12,9 @@ object NexoraColors {
     val NebulaViolet = Color(0xFFB0B0B8)
     val NebulaPink = Color(0xFFFF4FB0)
     val PlasmaCyan = Color(0xFF00F0FF)
-    val StarWhite = Color(0xFFF2F2F2)
-    val Muted = Color(0xFF8A8A8A)
+    val StarWhite = Color(0xFFFFFFFF)
+    val Muted = Color(0xFFFFFFFF)
+    val Divider = Color(0xFF2A2A2A)
 }
 
 private val NexoraDarkScheme = darkColorScheme(
@@ -24,8 +25,11 @@ private val NexoraDarkScheme = darkColorScheme(
     surface = NexoraColors.DeepNavy,
     onPrimary = NexoraColors.SpaceBlack,
     onSecondary = NexoraColors.SpaceBlack,
+    onTertiary = NexoraColors.SpaceBlack,
     onBackground = NexoraColors.StarWhite,
     onSurface = NexoraColors.StarWhite,
+    onSurfaceVariant = NexoraColors.StarWhite,
+    outline = NexoraColors.Divider,
 )
 
 @Composable
