@@ -34,6 +34,7 @@ import com.nexora.circle.ui.screens.NexoraXScreen
 import com.nexora.circle.ui.screens.OrbitScreen
 import com.nexora.circle.ui.screens.PlaceholderScreen
 import com.nexora.circle.ui.screens.ProfileScreen
+import com.nexora.circle.ui.screens.SearchScreen
 import com.nexora.circle.ui.theme.NexoraColors
 
 private enum class Tab(val label: String) {
@@ -100,6 +101,7 @@ private fun TabIcon(tab: Tab, tint: Color) {
 @Composable
 fun NexoraApp() {
     var selected by rememberSaveable { mutableStateOf(Tab.Orbit) }
+    var showSearch by rememberSaveable { mutableStateOf(false) }
 
     StarfieldBackground {
         Scaffold(
@@ -109,7 +111,10 @@ fun NexoraApp() {
                     Tab.values().forEach { tab ->
                         NavigationBarItem(
                             selected = selected == tab,
-                            onClick = { selected = tab },
+                            onClick = {
+                                selected = tab
+                                showSearch = false
+                            },
                             icon = {
                                 TabIcon(
                                     tab,
@@ -131,11 +136,19 @@ fun NexoraApp() {
         ) { padding: PaddingValues ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (selected) {
-                    Tab.Orbit -> OrbitScreen(
-                        onOpenComms = { selected = Tab.Comms },
-                        onOpenNexoraX = { selected = Tab.NexoraX },
-                        onOpenProfile = { selected = Tab.Profile },
-                    )
+                    Tab.Orbit -> if (showSearch) {
+                        SearchScreen(
+                            onBack = { showSearch = false },
+                            onUserClick = { showSearch = false },
+                        )
+                    } else {
+                        OrbitScreen(
+                            onOpenComms = { selected = Tab.Comms },
+                            onOpenNexoraX = { selected = Tab.NexoraX },
+                            onOpenProfile = { selected = Tab.Profile },
+                            onOpenSearch = { showSearch = true },
+                        )
+                    }
                     Tab.Comms -> CommsScreen()
                     Tab.Arcade -> PlaceholderScreen(
                         title = "Arcade (Games)",
