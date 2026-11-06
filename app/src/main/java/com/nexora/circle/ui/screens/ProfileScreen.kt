@@ -1,5 +1,6 @@
 package com.nexora.circle.ui.screens
 
+import android.app.Activity
 import android.content.Context
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,9 +28,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,8 +46,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.nexora.circle.ui.components.GlassCard
 import com.nexora.circle.ui.theme.NexoraColors
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.io.File
 
 private const val PREFS_NAME = "nexora_profile"
@@ -67,7 +75,6 @@ private const val USERNAME_PREFIX = "X."
 private const val USERNAME_MIN = 3
 private const val USERNAME_MAX = 28
 
-// Cleans the part after "X.": lowercase letters, numbers, . and _
 private fun cleanUsername(input: String): String =
     input.lowercase()
         .removePrefix("x.")
@@ -86,7 +93,11 @@ private fun usernameError(name: String): String? = when {
 fun ProfileScreen() {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    val user = remember { FirebaseAuth.getInstance().currentUser }
+    val uid = user?.uid
+    val db = remember { FirebaseFirestore.getInstance() }
 
     var savedName by remember { mutableStateOf(prefs.getString(KEY_NAME, "") ?: "") }
     var savedUsername by remember { mutableStateOf(prefs.getString(KEY_USERNAME, "") ?: "") }
@@ -95,6 +106,56 @@ fun ProfileScreen() {
     var username by remember { mutableStateOf(savedUsername) }
     var bio by remember { mutableStateOf(savedBio) }
     var editing by remember { mutableStateOf(false) }
+    var syncMsg by remember { mutableStateOf("") }
+
+    var nameChangedAt by remember { mutableStateOf(prefs.getLong(KEY_NAME_TIME, 0L)) }
+    var usernameChangedAt by remember { mutableStateOf(prefs.getLong(KEY_USERNAME_TIME, 0L)) }
+
+    LaunchedEffect(uid) {
+        if (uid == null) return@LaunchedEffect
+        try {
+            val snap = db.collection("users").document(uid).get().await()
+            if (snap.exists()) {
+                savedName = snap.getString("name") ?: ""
+                savedUsername = snap.getString("username") ?: ""
+                savedBio = snap.getString("bio") ?: ""
+                nameChangedAt = snap.getLong("nameChangedAt") ?: 0L
+                usernameChangedAt = snap.getLong("usernameChangedAt") ?: 0L
+                name = savedName
+                username = savedUsername
+                bio = savedBio
+                prefs.edit()
+                    .putString(KEY_NAME, savedName)
+                    .putString(KEY_USERNAME, savedUsername)
+                    .putString(KEY_BIO, savedBio)
+                    .putLong(KEY_NAME_TIME, nameChangedAt)
+                    .putLong(KEY_USERNAME_TIME, usernameChangedAt)
+                    .apply()
+            } else {
+                if (savedName.isBlank()) {
+                    val dn = user?.displayName.orEmpty()
+                    if (dn.isNotBlank()) {
+                        savedName = dn
+                        name = dn
+                    }
+                }
+                if (savedName.isNotBlank() || savedUsername.isNotBlank()) {
+                    db.collection("users").document(uid).set(
+                        mapOf(
+                            "name" to savedName,
+                            "username" to savedUsername,
+                            "bio" to savedBio,
+                            "nameChangedAt" to nameChangedAt,
+                            "usernameChangedAt" to usernameChangedAt,
+                        ),
+                        SetOptions.merge()
+                    ).await()
+                }
+            }
+        } catch (e: Exception) {
+            syncMsg = "Offline: showing saved data"
+        }
+    }
 
     val initial = (savedName.trim().firstOrNull()?.uppercaseChar() ?: '?').toString()
 
@@ -120,8 +181,6 @@ fun ProfileScreen() {
         }
     }
 
-    var nameChangedAt by remember { mutableStateOf(prefs.getLong(KEY_NAME_TIME, 0L)) }
-    var usernameChangedAt by remember { mutableStateOf(prefs.getLong(KEY_USERNAME_TIME, 0L)) }
     val nameDaysLeft = daysLeft(nameChangedAt)
     val usernameDaysLeft = daysLeft(usernameChangedAt)
 
@@ -259,6 +318,25 @@ fun ProfileScreen() {
                                     .putString(KEY_USERNAME, savedUsername)
                                     .putString(KEY_BIO, savedBio)
                                     .apply()
+
+                                if (uid != null) {
+                                    val data = mapOf(
+                                        "name" to savedName,
+                                        "username" to savedUsername,
+                                        "bio" to savedBio,
+                                        "nameChangedAt" to nameChangedAt,
+                                        "usernameChangedAt" to usernameChangedAt,
+                                    )
+                                    scope.launch {
+                                        try {
+                                            db.collection("users").document(uid)
+                                                .set(data, SetOptions.merge()).await()
+                                            syncMsg = "Saved to your account"
+                                        } catch (e: Exception) {
+                                            syncMsg = "Could not sync: ${e.localizedMessage}"
+                                        }
+                                    }
+                                }
                                 focus.clearFocus()
                                 editing = false
                             },
@@ -307,7 +385,30 @@ fun ProfileScreen() {
             Text("About", style = MaterialTheme.typography.titleSmall, color = NexoraColors.NebulaPink)
             Spacer(Modifier.height(6.dp))
             Text("Nexora Circle", color = NexoraColors.StarWhite)
-            Text("This profile is stored on this device only.", color = NexoraColors.Muted)
+            Text(
+                user?.email ?: "Signed in",
+                color = NexoraColors.Muted,
+            )
+            Text(
+                "Profile is saved to your account. Photo stays on this device.",
+                color = NexoraColors.Muted,
+            )
+            if (syncMsg.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(syncMsg, color = NexoraColors.NebulaPink)
+            }
         }
+
+        OutlinedButton(
+            onClick = {
+                FirebaseAuth.getInstance().signOut()
+                photoPath?.let { File(it).delete() }
+                prefs.edit().clear().apply()
+                (context as? Activity)?.recreate()
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Logout") }
+
+        Spacer(Modifier.height(24.dp))
     }
 }
