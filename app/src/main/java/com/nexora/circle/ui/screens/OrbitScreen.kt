@@ -20,7 +20,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -99,11 +109,46 @@ private fun Avatar(photo: ImageBitmap?, initial: String, size: Dp) {
 }
 
 @Composable
+private fun HeaderIcon(
+    icon: ImageVector,
+    label: String,
+    count: Int,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, modifier = Modifier.size(44.dp)) {
+        BadgedBox(
+            badge = {
+                if (count > 0) {
+                    Badge(
+                        containerColor = NexoraColors.PlasmaCyan,
+                        contentColor = NexoraColors.SpaceBlack,
+                    ) {
+                        Text(if (count > 99) "99+" else count.toString())
+                    }
+                }
+            }
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = NexoraColors.StarWhite,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+    }
+}
+
+@Composable
 fun OrbitScreen(
     onOpenComms: () -> Unit,
     onOpenNexoraX: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenSearch: () -> Unit = {},
+    onOpenSignal: () -> Unit = {},
+    onOpenNotifications: () -> Unit = {},
+    signalCount: Int = 0,
+    beamCount: Int = 0,
+    notifCount: Int = 0,
 ) {
     val context = LocalContext.current
     val user = remember { FirebaseAuth.getInstance().currentUser }
@@ -172,7 +217,7 @@ fun OrbitScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -181,15 +226,10 @@ fun OrbitScreen(
                 }
                 NexoraIcon(NxIcon.Orbit, tint = NexoraColors.PlasmaCyan, iconSize = 32.dp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { onOpenSearch() }) {
-                        Text("Search", color = NexoraColors.StarWhite)
-                    }
-                    Box(
-                        modifier = Modifier.size(36.dp).clickable { onOpenComms() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        NexoraIcon(NxIcon.Chat, tint = NexoraColors.StarWhite, iconSize = 26.dp)
-                    }
+                    HeaderIcon(Icons.Outlined.Search, "Search", 0) { onOpenSearch() }
+                    HeaderIcon(Icons.Outlined.PersonAdd, "Signal", signalCount) { onOpenSignal() }
+                    HeaderIcon(Icons.AutoMirrored.Outlined.Send, "Beam", beamCount) { onOpenComms() }
+                    HeaderIcon(Icons.Outlined.Notifications, "Notifications", notifCount) { onOpenNotifications() }
                 }
             }
 
@@ -204,7 +244,7 @@ fun OrbitScreen(
                     ) {
                         Text(
                             label,
-                            color = if (tab == i) NexoraColors.StarWhite else NexoraColors.Muted,
+                            color = NexoraColors.StarWhite,
                             fontWeight = if (tab == i) FontWeight.Bold else FontWeight.Normal,
                         )
                         Spacer(Modifier.height(10.dp))
@@ -224,7 +264,7 @@ fun OrbitScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(NexoraColors.Muted.copy(alpha = 0.25f))
+                    .background(NexoraColors.Divider)
             )
 
             if (errorMsg.isNotEmpty()) {
@@ -238,14 +278,14 @@ fun OrbitScreen(
             if (tab == 1) {
                 Text(
                     "Posts from people you follow will appear here. Coming soon.",
-                    color = NexoraColors.Muted,
+                    color = NexoraColors.StarWhite,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(32.dp),
                 )
             } else if (posts.isEmpty()) {
                 Text(
                     "No posts yet. Tap + to share your first signal.",
-                    color = NexoraColors.Muted,
+                    color = NexoraColors.StarWhite,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(32.dp),
                 )
@@ -270,7 +310,7 @@ fun OrbitScreen(
                                 if (post.resignalOf.isNotEmpty()) {
                                     Text(
                                         "Resignaled from ${post.resignalFromName.ifBlank { "Explorer" }}",
-                                        color = NexoraColors.PlasmaCyan,
+                                        color = NexoraColors.StarWhite,
                                     )
                                 }
                                 Text(
@@ -280,7 +320,7 @@ fun OrbitScreen(
                                 )
                                 Text(
                                     (if (post.handle.isNotBlank()) "X.${post.handle} · " else "") + ago(post.time),
-                                    color = NexoraColors.Muted,
+                                    color = NexoraColors.StarWhite,
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 Text(post.text, color = NexoraColors.StarWhite)
@@ -329,7 +369,7 @@ fun OrbitScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(1.dp)
-                                .background(NexoraColors.Muted.copy(alpha = 0.15f))
+                                .background(NexoraColors.Divider)
                         )
                     }
                 }
