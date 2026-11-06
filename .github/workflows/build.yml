@@ -22,7 +22,9 @@ jobs:
           gradle-version: 8.9
 
       - name: Create google-services.json
-        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > app/google-services.json
+        env:
+          GSJ: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: printf '%s' "$GSJ" > app/google-services.json
 
       - name: Build debug APK
         id: build
