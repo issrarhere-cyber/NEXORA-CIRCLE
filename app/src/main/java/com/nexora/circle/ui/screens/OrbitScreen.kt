@@ -50,6 +50,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.nexora.circle.ui.components.NexoraIcon
 import com.nexora.circle.ui.components.NxIcon
+import com.nexora.circle.ui.components.PostActions
 import com.nexora.circle.ui.theme.NexoraColors
 
 private data class Post(
@@ -60,6 +61,9 @@ private data class Post(
     val text: String,
     val time: Long,
     val likes: List<String>,
+    val resignals: List<String>,
+    val resignalOf: String,
+    val resignalFromName: String,
 )
 
 private fun ago(time: Long): String {
@@ -139,6 +143,8 @@ fun OrbitScreen(
                         val text = d.getString("text") ?: return@mapNotNull null
                         @Suppress("UNCHECKED_CAST")
                         val likes = (d.get("likes") as? List<String>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val resignals = (d.get("resignals") as? List<String>) ?: emptyList()
                         Post(
                             id = d.id,
                             authorUid = d.getString("authorUid") ?: "",
@@ -147,6 +153,9 @@ fun OrbitScreen(
                             text = text,
                             time = d.getLong("time") ?: 0L,
                             likes = likes,
+                            resignals = resignals,
+                            resignalOf = d.getString("resignalOf") ?: "",
+                            resignalFromName = d.getString("resignalFromName") ?: "",
                         )
                     }
                     posts.clear()
@@ -239,6 +248,7 @@ fun OrbitScreen(
                     items(posts, key = { it.id }) { post ->
                         val mine = post.authorUid == myUid
                         val liked = post.likes.contains(myUid)
+                        val resignaled = post.resignals.contains(myUid)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -251,6 +261,12 @@ fun OrbitScreen(
                                 40.dp,
                             )
                             Column(modifier = Modifier.weight(1f)) {
+                                if (post.resignalOf.isNotEmpty()) {
+                                    Text(
+                                        "Resignaled from ${post.resignalFromName.ifBlank { "Explorer" }}",
+                                        color = NexoraColors.PlasmaCyan,
+                                    )
+                                }
                                 Text(
                                     post.name.ifBlank { "Explorer" },
                                     color = NexoraColors.StarWhite,
@@ -263,41 +279,44 @@ fun OrbitScreen(
                                 Spacer(Modifier.height(6.dp))
                                 Text(post.text, color = NexoraColors.StarWhite)
                                 Spacer(Modifier.height(10.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(20.dp),
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        modifier = Modifier.clickable {
-                                            db.collection("posts").document(post.id).update(
-                                                "likes",
-                                                if (liked) FieldValue.arrayRemove(myUid)
-                                                else FieldValue.arrayUnion(myUid)
-                                            )
-                                        },
-                                    ) {
-                                        NexoraIcon(
-                                            NxIcon.Heart,
-                                            tint = if (liked) NexoraColors.NebulaPink else NexoraColors.Muted,
-                                            iconSize = 22.dp,
-                                            filled = liked,
+                                PostActions(
+                                    liked = liked,
+                                    likeCount = post.likes.size,
+                                    resignaled = resignaled,
+                                    resignalCount = post.resignals.size,
+                                    mine = mine,
+                                    shareText = "${post.name}: ${post.text}",
+                                    onLike = {
+                                        db.collection("posts").document(post.id).update(
+                                            "likes",
+                                            if (liked) FieldValue.arrayRemove(myUid)
+                                            else FieldValue.arrayUnion(myUid)
                                         )
-                                        if (post.likes.isNotEmpty()) {
-                                            Text("${post.likes.size}", color = NexoraColors.Muted)
+                                    },
+                                    onResignal = {
+                                        if (!resignaled && myUid.isNotEmpty()) {
+                                            val origin = post.resignalOf.ifEmpty { post.id }
+                                            db.collection("posts").document(post.id)
+                                                .update("resignals", FieldValue.arrayUnion(myUid))
+                                            db.collection("posts").add(
+                                                mapOf(
+                                                    "authorUid" to myUid,
+                                                    "authorName" to name,
+                                                    "authorHandle" to handle,
+                                                    "text" to post.text,
+                                                    "time" to System.currentTimeMillis(),
+                                                    "likes" to emptyList<String>(),
+                                                    "resignals" to emptyList<String>(),
+                                                    "resignalOf" to origin,
+                                                    "resignalFromName" to post.name,
+                                                )
+                                            ).addOnFailureListener {
+                                                errorMsg = "Could not resignal: ${it.localizedMessage}"
+                                            }
                                         }
-                                    }
-                                    if (mine) {
-                                        Text(
-                                            "Delete",
-                                            color = NexoraColors.Muted,
-                                            modifier = Modifier.clickable {
-                                                db.collection("posts").document(post.id).delete()
-                                            },
-                                        )
-                                    }
-                                }
+                                    },
+                                    onDelete = { db.collection("posts").document(post.id).delete() },
+                                )
                             }
                         }
                         Box(
@@ -353,6 +372,7 @@ fun OrbitScreen(
                                 "text" to draft.trim(),
                                 "time" to System.currentTimeMillis(),
                                 "likes" to emptyList<String>(),
+                                "resignals" to emptyList<String>(),
                             )
                         ).addOnFailureListener {
                             errorMsg = "Could not post: ${it.localizedMessage}"
