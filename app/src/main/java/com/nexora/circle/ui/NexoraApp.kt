@@ -31,10 +31,12 @@ import com.nexora.circle.ui.components.NxIcon
 import com.nexora.circle.ui.components.StarfieldBackground
 import com.nexora.circle.ui.screens.CommsScreen
 import com.nexora.circle.ui.screens.NexoraXScreen
+import com.nexora.circle.ui.screens.NotificationsScreen
 import com.nexora.circle.ui.screens.OrbitScreen
 import com.nexora.circle.ui.screens.PlaceholderScreen
 import com.nexora.circle.ui.screens.ProfileScreen
 import com.nexora.circle.ui.screens.SearchScreen
+import com.nexora.circle.ui.screens.SignalScreen
 import com.nexora.circle.ui.screens.UserProfileScreen
 import com.nexora.circle.ui.theme.NexoraColors
 
@@ -102,6 +104,8 @@ private fun TabIcon(tab: Tab, tint: Color) {
 fun NexoraApp() {
     var selected by rememberSaveable { mutableStateOf(Tab.Orbit) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
+    var showSignal by rememberSaveable { mutableStateOf(false) }
+    var showNotifications by rememberSaveable { mutableStateOf(false) }
     var profileUid by rememberSaveable { mutableStateOf("") }
 
     StarfieldBackground {
@@ -115,6 +119,8 @@ fun NexoraApp() {
                             onClick = {
                                 selected = tab
                                 showSearch = false
+                                showSignal = false
+                                showNotifications = false
                                 profileUid = ""
                             },
                             icon = {
@@ -149,12 +155,18 @@ fun NexoraApp() {
                                 onBack = { showSearch = false },
                                 onUserClick = { uid -> profileUid = uid },
                             )
+                        } else if (showSignal) {
+                            SignalScreen(onBack = { showSignal = false })
+                        } else if (showNotifications) {
+                            NotificationsScreen(onBack = { showNotifications = false })
                         } else {
                             OrbitScreen(
                                 onOpenComms = { selected = Tab.Comms },
                                 onOpenNexoraX = { selected = Tab.NexoraX },
                                 onOpenProfile = { selected = Tab.Profile },
                                 onOpenSearch = { showSearch = true },
+                                onOpenSignal = { showSignal = true },
+                                onOpenNotifications = { showNotifications = true },
                             )
                         }
                     }
