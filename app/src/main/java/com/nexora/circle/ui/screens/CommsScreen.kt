@@ -3,17 +3,21 @@ package com.nexora.circle.ui.screens
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -42,8 +46,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.nexora.circle.R
 import com.nexora.circle.ui.theme.NexoraColors
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -52,7 +59,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private const val CHAT_PREFS = "nexora_comms"
-private const val KEY_MESSAGES = "messages"
+private const val KEY_FRIENDS = "friends"
 
 private data class ChatMessage(
     val sender: String,
@@ -60,24 +67,57 @@ private data class ChatMessage(
     val time: Long,
 )
 
-private fun loadMessages(context: Context): List<ChatMessage> {
+private data class Friend(val id: String, val name: String)
+
+// ---------- Friends storage ----------
+
+private fun loadFriends(context: Context): List<Friend> {
     val prefs = context.getSharedPreferences(CHAT_PREFS, Context.MODE_PRIVATE)
-    val raw = prefs.getString(KEY_MESSAGES, null) ?: return emptyList()
+    val raw = prefs.getString(KEY_FRIENDS, null) ?: return emptyList()
+    return try {
+        val arr = JSONArray(raw)
+        val list = mutableListOf<Friend>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            list.add(Friend(o.optString("id", ""), o.optString("name", "")))
+        }
+        list.filter { it.id.isNotBlank() }
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
+private fun saveFriends(context: Context, friends: List<Friend>) {
+    val arr = JSONArray()
+    friends.forEach { arr.put(JSONObject().put("id", it.id).put("name", it.name)) }
+    context.getSharedPreferences(CHAT_PREFS, Context.MODE_PRIVATE)
+        .edit().putString(KEY_FRIENDS, arr.toString()).apply()
+}
+
+// Public: SearchScreen se friend add karne ke liye (abhi local, baad me Firebase)
+fun addFriendLocal(context: Context, id: String, name: String) {
+    val current = loadFriends(context).toMutableList()
+    if (current.none { it.id == id }) {
+        current.add(Friend(id, name))
+        saveFriends(context, current)
+    }
+}
+
+// ---------- Messages storage (har friend ki alag chat) ----------
+
+private fun loadMessages(context: Context, friendId: String): List<ChatMessage> {
+    val prefs = context.getSharedPreferences(CHAT_PREFS, Context.MODE_PRIVATE)
+    val raw = prefs.getString("messages_$friendId", null) ?: return emptyList()
     return try {
         val arr = JSONArray(raw)
         val list = mutableListOf<ChatMessage>()
         for (i in 0 until arr.length()) {
-            val item = arr.get(i)
-            val msg = if (item is JSONObject) {
-                ChatMessage(
-                    sender = item.optString("sender", ""),
-                    text = item.optString("text", ""),
-                    time = item.optLong("time", 0L),
-                )
-            } else {
-                // old format: plain text
-                ChatMessage("", item.toString(), 0L)
-            }
+            val item = arr.getJSONObject(i)
+            val msg = ChatMessage(
+                sender = item.optString("sender", ""),
+                text = item.optString("text", ""),
+                time = item.optLong("time", 0L),
+            )
             if (msg.text.isNotBlank()) list.add(msg)
         }
         list
@@ -86,7 +126,7 @@ private fun loadMessages(context: Context): List<ChatMessage> {
     }
 }
 
-private fun saveMessages(context: Context, messages: List<ChatMessage>) {
+private fun saveMessages(context: Context, friendId: String, messages: List<ChatMessage>) {
     val arr = JSONArray()
     messages.forEach {
         arr.put(
@@ -97,10 +137,9 @@ private fun saveMessages(context: Context, messages: List<ChatMessage>) {
         )
     }
     context.getSharedPreferences(CHAT_PREFS, Context.MODE_PRIVATE)
-        .edit().putString(KEY_MESSAGES, arr.toString()).apply()
+        .edit().putString("messages_$friendId", arr.toString()).apply()
 }
 
-// Reads the saved profile and builds "Name · X.username"
 private fun senderLabel(context: Context): String {
     val p = context.getSharedPreferences("nexora_profile", Context.MODE_PRIVATE)
     val name = p.getString("name", "") ?: ""
@@ -112,9 +151,14 @@ private fun senderLabel(context: Context): String {
 private fun formatTime(time: Long): String =
     if (time == 0L) "" else SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(time))
 
-private enum class BarKind { Emoji, Attach, Camera, Mic, Send }
+private fun toast(context: Context, text: String = "Coming soon") {
+    Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+}
 
-// Original icons for the message bar
+// ---------- Icons ----------
+
+private enum class BarKind { Emoji, Attach, Camera, Mic }
+
 @Composable
 private fun BarIcon(kind: BarKind, tint: Color, iconSize: Dp = 24.dp) {
     Canvas(Modifier.size(iconSize)) {
@@ -177,24 +221,114 @@ private fun BarIcon(kind: BarKind, tint: Color, iconSize: Dp = 24.dp) {
                 drawLine(tint, Offset(0.5f * w, 0.74f * w), Offset(0.5f * w, 0.88f * w), sw, StrokeCap.Round)
                 drawLine(tint, Offset(0.36f * w, 0.88f * w), Offset(0.64f * w, 0.88f * w), sw, StrokeCap.Round)
             }
-            BarKind.Send -> {
-                val p = Path().apply {
-                    moveTo(0.12f * w, 0.12f * w)
-                    lineTo(0.90f * w, 0.50f * w)
-                    lineTo(0.12f * w, 0.88f * w)
-                    lineTo(0.28f * w, 0.50f * w)
-                    close()
+        }
+    }
+}
+
+// ---------- Screens ----------
+
+@Composable
+fun CommsScreen(onSendSignal: () -> Unit = {}) {
+    val context = LocalContext.current
+    val friends = remember { mutableStateListOf<Friend>().apply { addAll(loadFriends(context)) } }
+    var selected by remember { mutableStateOf<Friend?>(null) }
+
+    val current = selected
+    if (current == null) {
+        FriendsList(
+            friends = friends,
+            onOpen = { selected = it },
+            onSendSignal = onSendSignal,
+        )
+    } else {
+        ChatView(friend = current, onBack = { selected = null })
+    }
+}
+
+@Composable
+private fun FriendsList(
+    friends: List<Friend>,
+    onOpen: (Friend) -> Unit,
+    onSendSignal: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Comms", style = MaterialTheme.typography.headlineMedium, color = NexoraColors.StarWhite)
+
+        if (friends.isEmpty()) {
+            Text("No signals yet... 👽", color = NexoraColors.Muted)
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(NexoraColors.PlasmaCyan)
+                    .clickable { onSendSignal() }
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Send Signal ➤", color = NexoraColors.SpaceBlack, fontWeight = FontWeight.Bold)
+            }
+        } else {
+            // chat wale friends upar, baaki neeche
+            val rows = friends
+                .map { f -> f to loadMessages(context, f.id).lastOrNull() }
+                .sortedByDescending { it.second?.time ?: 0L }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(rows) { (f, last) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(NexoraColors.Panel, RoundedCornerShape(16.dp))
+                            .clickable { onOpen(f) }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(NexoraColors.PlasmaCyan),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                f.name.take(1).uppercase(),
+                                color = NexoraColors.SpaceBlack,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(f.name, color = NexoraColors.StarWhite, fontWeight = FontWeight.Bold)
+                            Text(
+                                last?.text ?: "Tap to start chatting",
+                                color = NexoraColors.Muted,
+                                maxLines = 1,
+                            )
+                        }
+                        val t = formatTime(last?.time ?: 0L)
+                        if (t.isNotEmpty()) {
+                            Text(t, style = MaterialTheme.typography.labelSmall, color = NexoraColors.Muted)
+                        }
+                    }
                 }
-                drawPath(p, tint)
             }
         }
     }
 }
 
 @Composable
-fun CommsScreen() {
+private fun ChatView(friend: Friend, onBack: () -> Unit) {
     val context = LocalContext.current
-    val messages = remember { mutableStateListOf<ChatMessage>().apply { addAll(loadMessages(context)) } }
+    val messages = remember(friend.id) {
+        mutableStateListOf<ChatMessage>().apply { addAll(loadMessages(context, friend.id)) }
+    }
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
@@ -202,15 +336,11 @@ fun CommsScreen() {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
-    fun soon(text: String = "Coming soon") {
-        Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
-    }
-
     fun send() {
         val text = input.trim()
         if (text.isNotEmpty()) {
             messages.add(ChatMessage(senderLabel(context), text, System.currentTimeMillis()))
-            saveMessages(context, messages)
+            saveMessages(context, friend.id, messages)
             input = ""
         }
     }
@@ -222,7 +352,15 @@ fun CommsScreen() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Comms", style = MaterialTheme.typography.headlineMedium, color = NexoraColors.StarWhite)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "←",
+                style = MaterialTheme.typography.headlineMedium,
+                color = NexoraColors.StarWhite,
+                modifier = Modifier.clickable { onBack() }.padding(end = 16.dp),
+            )
+            Text(friend.name, style = MaterialTheme.typography.headlineSmall, color = NexoraColors.StarWhite)
+        }
 
         LazyColumn(
             state = listState,
@@ -230,7 +368,7 @@ fun CommsScreen() {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (messages.isEmpty()) {
-                item { Text("No signals yet... 👽", color = NexoraColors.Muted) }
+                item { Text("Say hi to ${friend.name} 👋", color = NexoraColors.Muted) }
             }
             items(messages) { msg ->
                 Column(
@@ -249,17 +387,12 @@ fun CommsScreen() {
                     Text(msg.text, color = NexoraColors.StarWhite)
                     val t = formatTime(msg.time)
                     if (t.isNotEmpty()) {
-                        Text(
-                            t,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = NexoraColors.Muted,
-                        )
+                        Text(t, style = MaterialTheme.typography.labelSmall, color = NexoraColors.Muted)
                     }
                 }
             }
         }
 
-        // Message bar: pill input + round action button
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -273,7 +406,7 @@ fun CommsScreen() {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Box(Modifier.clickable { soon("Use your keyboard's emoji key") }) {
+                Box(Modifier.clickable { toast(context, "Use your keyboard's emoji key") }) {
                     BarIcon(BarKind.Emoji, NexoraColors.Muted)
                 }
 
@@ -295,31 +428,37 @@ fun CommsScreen() {
                     )
                 }
 
-                Box(Modifier.clickable { soon() }) {
+                Box(Modifier.clickable { toast(context) }) {
                     BarIcon(BarKind.Attach, NexoraColors.Muted)
                 }
                 if (input.isBlank()) {
-                    Box(Modifier.clickable { soon() }) {
+                    Box(Modifier.clickable { toast(context) }) {
                         BarIcon(BarKind.Camera, NexoraColors.Muted)
                     }
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(NexoraColors.PlasmaCyan)
-                    .clickable {
-                        if (input.isNotBlank()) send() else soon()
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                BarIcon(
-                    if (input.isNotBlank()) BarKind.Send else BarKind.Mic,
-                    NexoraColors.SpaceBlack,
-                    26.dp,
+            if (input.isNotBlank()) {
+                // Pink send icon
+                Image(
+                    painter = painterResource(R.drawable.ic_send_pink),
+                    contentDescription = "Send",
+                    modifier = Modifier
+                        .width(62.dp)
+                        .height(42.dp)
+                        .clickable { send() },
                 )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(NexoraColors.PlasmaCyan)
+                        .clickable { toast(context) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BarIcon(BarKind.Mic, NexoraColors.SpaceBlack, 26.dp)
+                }
             }
         }
     }
