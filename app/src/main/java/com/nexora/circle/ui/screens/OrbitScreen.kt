@@ -49,7 +49,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -60,7 +59,6 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.nexora.circle.ui.components.NexoraIcon
 import com.nexora.circle.ui.components.NxIcon
-import com.nexora.circle.ui.components.PostActions
 import com.nexora.circle.ui.theme.NexoraColors
 
 private data class Post(
@@ -299,88 +297,6 @@ fun OrbitScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
-                                                            Spacer(Modifier.height(8.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                                    Text(
-                                        (if (liked) "♥ " else "♡ ") + post.likes.size,
-                                        color = NexoraColors.StarWhite,
-                                        modifier = Modifier.clickable {
-                                            db.collection("posts").document(post.id).update(
-                                                "likes",
-                                                if (liked) FieldValue.arrayRemove(myUid)
-                                                else FieldValue.arrayUnion(myUid),
-                                            )
-                                        },
-                                    )
-                                    Text(
-                                        (if (resignaled) "⟳ " else "⟲ ") + post.resignals.size,
-                                        color = NexoraColors.StarWhite,
-                                        modifier = Modifier.clickable {
-                                            db.collection("posts").document(post.id).update(
-                                                "resignals",
-                                                if (resignaled) FieldValue.arrayRemove(myUid)
-                                                else FieldValue.arrayUnion(myUid),
-                                            )
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp)
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(NexoraColors.PlasmaCyan)
-                .clickable { composing = true },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("+", color = NexoraColors.SpaceBlack, fontWeight = FontWeight.Bold)
-        }
-
-        if (composing) {
-            AlertDialog(
-                onDismissRequest = { composing = false },
-                title = { Text("New signal") },
-                text = {
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = { draft = it },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        if (draft.isNotBlank()) {
-                            db.collection("posts").add(
-                                hashMapOf(
-                                    "authorUid" to myUid,
-                                    "authorName" to name,
-                                    "authorHandle" to handle,
-                                    "text" to draft.trim(),
-                                    "time" to System.currentTimeMillis(),
-                                    "likes" to emptyList<String>(),
-                                    "resignals" to emptyList<String>(),
-                                )
-                            )
-                        }
-                        draft = ""
-                        composing = false
-                    }) { Text("Post") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { composing = false }) { Text("Cancel") }
-                },
-            )
-        }
-    }
-}
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Avatar(
@@ -406,3 +322,7 @@ fun OrbitScreen(
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 Text(post.text, color = NexoraColors.StarWhite)
+                                Spacer(Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                                    Text(
+                                        (if (liked) "♥ " else "♡ ") + post.like
