@@ -1,7 +1,7 @@
 package com.nexora.circle.ui.screens
 
 import android.content.Context
-import  android.content.Intent
+import android.content.Intent
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -172,8 +172,8 @@ fun OrbitScreen(
     var composing by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
-    
-var commentsFor by remember { mutableStateOf<String?>(null) }
+    var commentsFor by remember { mutableStateOf<String?>(null) }
+
     DisposableEffect(myUid) {
         val reg = db.collection("posts")
             .orderBy("time", Query.Direction.DESCENDING)
@@ -324,84 +324,94 @@ var commentsFor by remember { mutableStateOf<String?>(null) }
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 Text(post.text, color = NexoraColors.StarWhite)
-                                
                                 Spacer(Modifier.height(8.dp))
-Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-    Text(
-        (if (liked) "♥ " else "♡ ") + post.likes.size,
-        color = NexoraColors.StarWhite,
-        modifier = Modifier.clickable {
-            db.collection("posts").document(post.id).update(
-                "likes",
-                if (liked) FieldValue.arrayRemove(myUid)
-                else FieldValue.arrayUnion(myUid),
-            )
-        },
-    )
-    Text(
-        (if (resignaled) "⟳ " else "⟲ ") + post.resignals.size,
-        color = NexoraColors.StarWhite,
-        modifier = Modifier.clickable {
-            db.collection("posts").document(post.id).update(
-                "resignals",
-                if (resignaled) FieldValue.arrayRemove(myUid)
-                else FieldValue.arrayUnion(myUid),
-            )
-        },
-    )
-}
-}
-}
-}
-}
-}
-}
-Box(
-    modifier = Modifier
-        .align(Alignment.BottomEnd)
-        .padding(20.dp)
-        .size(56.dp)
-        .clip(CircleShape)
-        .background(NexoraColors.PlasmaCyan)
-        .clickable { composing = true },
-    contentAlignment = Alignment.Center,
-) {
-    Text("+", color = NexoraColors.SpaceBlack, fontWeight = FontWeight.Bold)
-}
-if (composing) {
-    AlertDialog(
-        onDismissRequest = { composing = false },
-        title = { Text("New signal") },
-        text = {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                if (draft.isNotBlank()) {
-                    db.collection("posts").add(
-                        hashMapOf(
-                            "authorUid" to myUid,
-                            "authorName" to name,
-                            "authorHandle" to handle,
-                            "text" to draft.trim(),
-                            "time" to System.currentTimeMillis(),
-                            "likes" to emptyList<String>(),
-                            "resignals" to emptyList<String>(),
-                        )
-                    )
+                                PostActionBar(
+                                    liked = liked,
+                                    resignaled = resignaled,
+                                    likeCount = post.likes.size,
+                                    resignalCount = post.resignals.size,
+                                    onComment = { commentsFor = post.id },
+                                    onLike = {
+                                        db.collection("posts").document(post.id).update(
+                                            "likes",
+                                            if (liked) FieldValue.arrayRemove(myUid)
+                                            else FieldValue.arrayUnion(myUid),
+                                        )
+                                    },
+                                    onResignal = {
+                                        db.collection("posts").document(post.id).update(
+                                            "resignals",
+                                            if (resignaled) FieldValue.arrayRemove(myUid)
+                                            else FieldValue.arrayUnion(myUid),
+                                        )
+                                    },
+                                    onShare = {
+                                        val send = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_TEXT, post.text)
+                                        }
+                                        context.startActivity(
+                                            Intent.createChooser(send, "Share")
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
-                draft = ""
-                composing = false
-            }) { Text("Post") }
-        },
-        dismissButton = {
-            TextButton(onClick = { composing = false }) { Text("Cancel") }
-        },
-    )
-}
-}
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(NexoraColors.PlasmaCyan)
+                .clickable { composing = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("+", color = NexoraColors.SpaceBlack, fontWeight = FontWeight.Bold)
+        }
+
+        commentsFor?.let { CommentsDialog(it, myUid, name) { commentsFor = null } }
+
+        if (composing) {
+            AlertDialog(
+                onDismissRequest = { composing = false },
+                title = { Text("New signal") },
+                text = {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (draft.isNotBlank()) {
+                            db.collection("posts").add(
+                                hashMapOf(
+                                    "authorUid" to myUid,
+                                    "authorName" to name,
+                                    "authorHandle" to handle,
+                                    "text" to draft.trim(),
+                                    "time" to System.currentTimeMillis(),
+                                    "likes" to emptyList<String>(),
+                                    "resignals" to emptyList<String>(),
+                                )
+                            )
+                        }
+                        draft = ""
+                        composing = false
+                    }) { Text("Post") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { composing = false }) { Text("Cancel") }
+                },
+            )
+        }
+    }
 }
