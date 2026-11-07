@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -27,9 +28,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,97 +53,42 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.nexora.circle.R
 import com.nexora.circle.ui.theme.NexoraColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import org.json.JSONArray
-import org.json.JSONObject
-
-private const val CHAT_PREFS = "nexora_comms"
-private const val KEY_FRIENDS = "friends"
 
 private data class ChatMessage(
-    val sender: String,
+    val id: String,
+    val senderUid: String,
+    val senderName: String,
     val text: String,
     val time: Long,
 )
 
 private data class Friend(val id: String, val name: String)
 
-// ---------- Friends storage ----------
+private fun chatIdOf(a: String, b: String): String = listOf(a, b).sorted().joinToString("_")
 
-private fun loadFriends(context: Context): List<Friend> {
-    val prefs = context.getSharedPreferences(CHAT_PREFS, Context.MODE_PRIVATE)
-    val raw = prefs.getString(KEY_FRIENDS, null) ?: return emptyList()
-    return try {
-        val arr = JSONArray(raw)
-        val list = mutableListOf<Friend>()
-        for (i in 0 until arr.length()) {
-            val o = arr.getJSONObject(i)
-            list.add(Friend(o.optString("id", ""), o.optString("name", "")))
-        }
-        list.filter { it.id.isNotBlank() }
-    } catch (e: Exception) {
-        emptyList()
-    }
-}
+private fun docToMessage(d: com.google.firebase.firestore.DocumentSnapshot): ChatMessage =
+    ChatMessage(
+        id = d.id,
+        senderUid = d.getString("senderUid") ?: "",
+        senderName = d.getString("senderName") ?: "",
+        text = d.getString("text") ?: "",
+        time = d.getLong("time") ?: 0L,
+    )
 
-private fun saveFriends(context: Context, friends: List<Friend>) {
-    val arr = JSONArray()
-    friends.forEach { arr.put(JSONObject().put("id", it.id).put("name", it.name)) }
-    context.getSharedPreferences(CHAT_PREFS, Context.MODE_PRIVATE)
-        .edit().putString(KEY_FRIENDS, arr.toString()).apply()
-}
-
-// Public: SearchScreen se friend add karne ke liye (abhi local, baad me Firebase)
+// Kept so other screens that call it still compile. Friends now come from Firebase.
+@Suppress("UNUSED_PARAMETER")
 fun addFriendLocal(context: Context, id: String, name: String) {
-    val current = loadFriends(context).toMutableList()
-    if (current.none { it.id == id }) {
-        current.add(Friend(id, name))
-        saveFriends(context, current)
-    }
 }
 
-// ---------- Messages storage (har friend ki alag chat) ----------
-
-private fun loadMessages(context: Context, friendId: String): List<ChatMessage> {
-    val prefs = context.getSharedPreferences(CHAT_PREFS, Context.MODE_PRIVATE)
-    val raw = prefs.getString("messages_$friendId", null) ?: return emptyList()
-    return try {
-        val arr = JSONArray(raw)
-        val list = mutableListOf<ChatMessage>()
-        for (i in 0 until arr.length()) {
-            val item = arr.getJSONObject(i)
-            val msg = ChatMessage(
-                sender = item.optString("sender", ""),
-                text = item.optString("text", ""),
-                time = item.optLong("time", 0L),
-            )
-            if (msg.text.isNotBlank()) list.add(msg)
-        }
-        list
-    } catch (e: Exception) {
-        emptyList()
-    }
-}
-
-private fun saveMessages(context: Context, friendId: String, messages: List<ChatMessage>) {
-    val arr = JSONArray()
-    messages.forEach {
-        arr.put(
-            JSONObject()
-                .put("sender", it.sender)
-                .put("text", it.text)
-                .put("time", it.time)
-        )
-    }
-    context.getSharedPreferences(CHAT_PREFS, Context.MODE_PRIVATE)
-        .edit().putString("messages_$friendId", arr.toString()).apply()
-}
-
-private fun senderLabel(context: Context): String {
+private fun myDisplayName(context: Context): String {
     val p = context.getSharedPreferences("nexora_profile", Context.MODE_PRIVATE)
     val name = p.getString("name", "") ?: ""
     val user = p.getString("username", "") ?: ""
@@ -228,36 +176,86 @@ private fun BarIcon(kind: BarKind, tint: Color, iconSize: Dp = 24.dp) {
 // ---------- Screens ----------
 
 @Composable
-fun CommsScreen(onSendSignal: () -> Unit = {}) {
-    val context = LocalContext.current
-    val friends = remember { mutableStateListOf<Friend>().apply { addAll(loadFriends(context)) } }
-    var selected by remember { mutableStateOf<Friend?>(null) }
+fun CommsScreen(
+    onSendSignal: () -> Unit = {},
+    startUid: String? = null,
+) {
+    val db = remember { FirebaseFirestore.getInstance() }
+    val myUid = remember { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }
+    val friendIds = remember { mutableStateListOf<String>() }
+    val names = remember { mutableStateMapOf<String, String>() }
+    var selectedId by remember { mutableStateOf(startUid) }
+    var loadError by remember { mutableStateOf("") }
 
-    val current = selected
+    LaunchedEffect(startUid) {
+        if (startUid != null) selectedId = startUid
+    }
+
+    fun fetchName(uid: String) {
+        if (names.containsKey(uid)) return
+        db.collection("users").document(uid).get().addOnSuccessListener { s ->
+            names[uid] = s.getString("name")?.ifBlank { null } ?: "Explorer"
+        }
+    }
+
+    DisposableEffect(myUid) {
+        if (myUid.isEmpty()) return@DisposableEffect onDispose { }
+        val reg = db.collection("users").document(myUid).collection("friends")
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    loadError = "Could not load friends: ${err.localizedMessage}"
+                    return@addSnapshotListener
+                }
+                loadError = ""
+                val ids = snap?.documents?.map { it.id } ?: emptyList()
+                friendIds.clear()
+                friendIds.addAll(ids)
+                ids.forEach { fetchName(it) }
+            }
+        onDispose { reg.remove() }
+    }
+
+    LaunchedEffect(selectedId) {
+        selectedId?.let { fetchName(it) }
+    }
+
+    val current = selectedId
     if (current == null) {
         FriendsList(
-            friends = friends,
-            onOpen = { selected = it },
+            myUid = myUid,
+            friends = friendIds.map { Friend(it, names[it] ?: "Explorer") },
+            loadError = loadError,
+            onOpen = { selectedId = it.id },
             onSendSignal = onSendSignal,
         )
     } else {
-        ChatView(friend = current, onBack = { selected = null })
+        ChatView(
+            myUid = myUid,
+            friend = Friend(current, names[current] ?: "Explorer"),
+            onBack = { selectedId = null },
+        )
     }
 }
 
 @Composable
 private fun FriendsList(
+    myUid: String,
     friends: List<Friend>,
+    loadError: String,
     onOpen: (Friend) -> Unit,
     onSendSignal: () -> Unit,
 ) {
-    val context = LocalContext.current
+    val db = remember { FirebaseFirestore.getInstance() }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Comms", style = MaterialTheme.typography.headlineMedium, color = NexoraColors.StarWhite)
+
+        if (loadError.isNotEmpty()) {
+            Text(loadError, color = NexoraColors.NebulaPink)
+        }
 
         if (friends.isEmpty()) {
             Text("No signals yet... 👽", color = NexoraColors.Muted)
@@ -272,16 +270,23 @@ private fun FriendsList(
                 Text("Send Signal ➤", color = NexoraColors.SpaceBlack, fontWeight = FontWeight.Bold)
             }
         } else {
-            // chat wale friends upar, baaki neeche
-            val rows = friends
-                .map { f -> f to loadMessages(context, f.id).lastOrNull() }
-                .sortedByDescending { it.second?.time ?: 0L }
-
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(rows) { (f, last) ->
+                items(friends, key = { it.id }) { f ->
+                    var last by remember(f.id) { mutableStateOf<ChatMessage?>(null) }
+                    DisposableEffect(f.id) {
+                        val reg = db.collection("chats").document(chatIdOf(myUid, f.id))
+                            .collection("messages")
+                            .orderBy("time", Query.Direction.DESCENDING)
+                            .limit(1)
+                            .addSnapshotListener { s, _ ->
+                                last = s?.documents?.firstOrNull()?.let { docToMessage(it) }
+                            }
+                        onDispose { reg.remove() }
+                    }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -324,13 +329,30 @@ private fun FriendsList(
 }
 
 @Composable
-private fun ChatView(friend: Friend, onBack: () -> Unit) {
+private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
     val context = LocalContext.current
-    val messages = remember(friend.id) {
-        mutableStateListOf<ChatMessage>().apply { addAll(loadMessages(context, friend.id)) }
-    }
+    val db = remember { FirebaseFirestore.getInstance() }
+    val chatId = remember(friend.id) { chatIdOf(myUid, friend.id) }
+    val messages = remember(chatId) { mutableStateListOf<ChatMessage>() }
     var input by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
+    DisposableEffect(chatId) {
+        val reg = db.collection("chats").document(chatId).collection("messages")
+            .orderBy("time", Query.Direction.ASCENDING)
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    errorMsg = "Load failed: ${err.localizedMessage}"
+                    return@addSnapshotListener
+                }
+                if (snap != null) {
+                    messages.clear()
+                    messages.addAll(snap.documents.map { docToMessage(it) }.filter { it.text.isNotBlank() })
+                }
+            }
+        onDispose { reg.remove() }
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
@@ -338,10 +360,23 @@ private fun ChatView(friend: Friend, onBack: () -> Unit) {
 
     fun send() {
         val text = input.trim()
-        if (text.isNotEmpty()) {
-            messages.add(ChatMessage(senderLabel(context), text, System.currentTimeMillis()))
-            saveMessages(context, friend.id, messages)
-            input = ""
+        if (text.isEmpty()) return
+        if (myUid.isEmpty()) {
+            errorMsg = "You are not signed in."
+            return
+        }
+        errorMsg = ""
+        input = ""
+        db.collection("chats").document(chatId).collection("messages").add(
+            hashMapOf(
+                "senderUid" to myUid,
+                "senderName" to myDisplayName(context),
+                "toUid" to friend.id,
+                "text" to text,
+                "time" to System.currentTimeMillis(),
+            )
+        ).addOnFailureListener { e ->
+            errorMsg = "Send failed: ${e.localizedMessage}"
         }
     }
 
@@ -370,27 +405,41 @@ private fun ChatView(friend: Friend, onBack: () -> Unit) {
             if (messages.isEmpty()) {
                 item { Text("Say hi to ${friend.name} 👋", color = NexoraColors.Muted) }
             }
-            items(messages) { msg ->
+            items(messages, key = { it.id }) { msg ->
+                val mine = msg.senderUid == myUid
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(NexoraColors.Panel, RoundedCornerShape(16.dp))
-                        .padding(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
                 ) {
-                    if (msg.sender.isNotBlank()) {
-                        Text(
-                            msg.sender,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = NexoraColors.PlasmaCyan,
-                        )
-                    }
-                    Text(msg.text, color = NexoraColors.StarWhite)
-                    val t = formatTime(msg.time)
-                    if (t.isNotEmpty()) {
-                        Text(t, style = MaterialTheme.typography.labelSmall, color = NexoraColors.Muted)
+                    Column(
+                        modifier = Modifier
+                            .widthIn(max = 280.dp)
+                            .background(
+                                if (mine) NexoraColors.PlasmaCyan.copy(alpha = 0.18f)
+                                else NexoraColors.Panel,
+                                RoundedCornerShape(16.dp),
+                            )
+                            .padding(12.dp),
+                    ) {
+                        if (!mine && msg.senderName.isNotBlank()) {
+                            Text(
+                                msg.senderName,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = NexoraColors.PlasmaCyan,
+                            )
+                        }
+                        Text(msg.text, color = NexoraColors.StarWhite)
+                        val t = formatTime(msg.time)
+                        if (t.isNotEmpty()) {
+                            Text(t, style = MaterialTheme.typography.labelSmall, color = NexoraColors.Muted)
+                        }
                     }
                 }
             }
+        }
+
+        if (errorMsg.isNotEmpty()) {
+            Text(errorMsg, color = NexoraColors.NebulaPink)
         }
 
         Row(
@@ -439,7 +488,6 @@ private fun ChatView(friend: Friend, onBack: () -> Unit) {
             }
 
             if (input.isNotBlank()) {
-                // Pink send icon
                 Image(
                     painter = painterResource(R.drawable.ic_send_pink),
                     contentDescription = "Send",
