@@ -390,6 +390,31 @@ fun OrbitScreen(
             (it.visibility == "Only Match Signaled" && matches.contains(it.authorUid))
     }
 
+    // Following tab: uids of people I follow (users/{myUid}/following/{uid})
+    var followingUids by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    DisposableEffect(myUid) {
+        if (myUid.isBlank()) {
+            onDispose { }
+        } else {
+            val followReg = db.collection("users").document(myUid)
+                .collection("following")
+                .addSnapshotListener { snap, _ ->
+                    if (snap != null) {
+                        followingUids = snap.documents.map { it.id }.toSet()
+                    }
+                }
+            onDispose { followReg.remove() }
+        }
+    }
+
+    // For you = everything visible; Following = only posts by people I follow
+    val feedPosts = if (tab == 1) {
+        visiblePosts.filter { followingUids.contains(it.authorUid) }
+    } else {
+        visiblePosts
+    }
+
     DisposableEffect(myUid) {
         val reg = db.collection("posts")
             .orderBy("time", Query.Direction.DESCENDING)
@@ -522,17 +547,16 @@ fun OrbitScreen(
                         )
                     }
 
-                    if (tab == 1) {
+                    if (feedPosts.isEmpty()) {
                         Text(
-                            "Posts from people you follow will appear here. Coming soon.",
-                            color = NexoraColors.StarWhite,
-                            fontSize = 16.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(32.dp),
-                        )
-                    } else if (visiblePosts.isEmpty()) {
-                        Text(
-                            "No posts yet. Tap + to share your first signal.",
+                            if (tab == 1) {
+                                if (followingUids.isEmpty())
+                                    "You are not following anyone yet. Follow people to see their posts here."
+                                else
+                                    "No posts from people you follow yet."
+                            } else {
+                                "No posts yet. Tap + to share your first signal."
+                            },
                             color = NexoraColors.StarWhite,
                             fontSize = 16.sp,
                             textAlign = TextAlign.Center,
@@ -540,7 +564,7 @@ fun OrbitScreen(
                         )
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(visiblePosts, key = { it.id }) { post ->
+                            items(feedPosts, key = { it.id }) { post ->
                                 val mine = post.authorUid == myUid
                                 val liked = post.likes.contains(myUid)
                                 val resignaled = post.resignals.contains(myUid)
