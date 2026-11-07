@@ -172,7 +172,8 @@ fun OrbitScreen(
     var composing by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
-
+    
+var commentsFor by remember { mutableStateOf<String?>(null) }
     DisposableEffect(myUid) {
         val reg = db.collection("posts")
             .orderBy("time", Query.Direction.DESCENDING)
