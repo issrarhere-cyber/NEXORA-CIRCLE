@@ -1,6 +1,8 @@
 package com.nexora.circle.ui.screens
 
 import android.content.Context
+import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -11,9 +13,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,6 +53,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -68,6 +73,9 @@ private data class ChatMessage(
     val senderName: String,
     val text: String,
     val time: Long,
+    val delivered: Boolean = false,
+    val seen: Boolean = false,
+    val pending: Boolean = false,
 )
 
 private data class Friend(val id: String, val name: String)
@@ -81,6 +89,9 @@ private fun docToMessage(d: com.google.firebase.firestore.DocumentSnapshot): Cha
         senderName = d.getString("senderName") ?: "",
         text = d.getString("text") ?: "",
         time = d.getLong("time") ?: 0L,
+        delivered = d.getBoolean("delivered") == true,
+        seen = d.getBoolean("seen") == true,
+        pending = d.metadata.hasPendingWrites(),
     )
 
 // Kept so other screens that call it still compile. Friends now come from Firebase.
@@ -101,6 +112,25 @@ private fun formatTime(time: Long): String =
 
 private fun toast(context: Context, text: String = "Coming soon") {
     Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+}
+
+// Plays res/raw/message_tone.* if you added it, otherwise the phone's default notification sound.
+private fun playMessageTone(context: Context) {
+    try {
+        val resId = context.resources.getIdentifier("message_tone", "raw", context.packageName)
+        if (resId != 0) {
+            val mp = MediaPlayer.create(context, resId)
+            if (mp != null) {
+                mp.setOnCompletionListener { it.release() }
+                mp.start()
+                return
+            }
+        }
+        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        RingtoneManager.getRingtone(context, uri)?.play()
+    } catch (e: Exception) {
+        // Sound is optional; never crash the chat because of it.
+    }
 }
 
 // ---------- Icons ----------
@@ -169,6 +199,46 @@ private fun BarIcon(kind: BarKind, tint: Color, iconSize: Dp = 24.dp) {
                 drawLine(tint, Offset(0.5f * w, 0.74f * w), Offset(0.5f * w, 0.88f * w), sw, StrokeCap.Round)
                 drawLine(tint, Offset(0.36f * w, 0.88f * w), Offset(0.64f * w, 0.88f * w), sw, StrokeCap.Round)
             }
+        }
+    }
+}
+
+// ---------- Message status (sent / delivered / seen) ----------
+
+private enum class MsgStatus { Pending, Sent, Delivered, Seen }
+
+private fun statusOf(m: ChatMessage): MsgStatus = when {
+    m.seen -> MsgStatus.Seen
+    m.delivered -> MsgStatus.Delivered
+    m.pending -> MsgStatus.Pending
+    else -> MsgStatus.Sent
+}
+
+@Composable
+private fun StatusTicks(status: MsgStatus) {
+    val color = when (status) {
+        MsgStatus.Seen -> NexoraColors.NebulaPink
+        MsgStatus.Pending -> NexoraColors.Muted.copy(alpha = 0.5f)
+        else -> NexoraColors.Muted
+    }
+    val double = status == MsgStatus.Delivered || status == MsgStatus.Seen
+    Canvas(Modifier.size(width = 20.dp, height = 12.dp)) {
+        val w = size.width
+        val h = size.height
+        val stroke = Stroke(width = h * 0.16f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        fun tick(dx: Float) {
+            val p = Path().apply {
+                moveTo(dx, 0.55f * h)
+                lineTo(dx + 0.2f * w, 0.85f * h)
+                lineTo(dx + 0.62f * w, 0.1f * h)
+            }
+            drawPath(p, color, style = stroke)
+        }
+        if (double) {
+            tick(0f)
+            tick(0.3f * w)
+        } else {
+            tick(0.15f * w)
         }
     }
 }
@@ -282,7 +352,15 @@ private fun FriendsList(
                             .orderBy("time", Query.Direction.DESCENDING)
                             .limit(1)
                             .addSnapshotListener { s, _ ->
-                                last = s?.documents?.firstOrNull()?.let { docToMessage(it) }
+                                val d = s?.documents?.firstOrNull()
+                                last = d?.let { docToMessage(it) }
+                                // Friend's message reached my phone -> mark Delivered.
+                                if (d != null && d.getString("toUid") == myUid &&
+                                    d.getBoolean("delivered") != true &&
+                                    !d.metadata.hasPendingWrites()
+                                ) {
+                                    d.reference.update("delivered", true)
+                                }
                             }
                         onDispose { reg.remove() }
                     }
@@ -338,7 +416,11 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
     var errorMsg by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
+    // Keyboard height. Changes while the keyboard opens/closes.
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+
     DisposableEffect(chatId) {
+        var firstLoad = true
         val reg = db.collection("chats").document(chatId).collection("messages")
             .orderBy("time", Query.Direction.ASCENDING)
             .addSnapshotListener { snap, err ->
@@ -347,15 +429,39 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
                     return@addSnapshotListener
                 }
                 if (snap != null) {
+                    val fresh = snap.documents.map { docToMessage(it) }.filter { it.text.isNotBlank() }
+                    val newest = fresh.lastOrNull()
+                    // Sound only for a NEW message from the friend (not on first load, not for my own).
+                    if (!firstLoad && newest != null && newest.senderUid != myUid &&
+                        fresh.size > messages.size
+                    ) {
+                        playMessageTone(context)
+                    }
+                    firstLoad = false
+                    // Chat is open on my phone -> friend's messages are Delivered and Seen.
+                    snap.documents.forEach { d ->
+                        if (d.getString("toUid") == myUid &&
+                            d.getBoolean("seen") != true &&
+                            !d.metadata.hasPendingWrites()
+                        ) {
+                            d.reference.update(mapOf("delivered" to true, "seen" to true))
+                        }
+                    }
                     messages.clear()
-                    messages.addAll(snap.documents.map { docToMessage(it) }.filter { it.text.isNotBlank() })
+                    messages.addAll(fresh)
                 }
             }
         onDispose { reg.remove() }
     }
 
+    // New message -> scroll to the bottom.
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+    }
+
+    // Keyboard opens/closes -> stay on the last message so it is not hidden.
+    LaunchedEffect(imeBottom) {
+        if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
     }
 
     fun send() {
@@ -374,6 +480,8 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
                 "toUid" to friend.id,
                 "text" to text,
                 "time" to System.currentTimeMillis(),
+                "delivered" to false,
+                "seen" to false,
             )
         ).addOnFailureListener { e ->
             errorMsg = "Send failed: ${e.localizedMessage}"
@@ -430,8 +538,14 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
                         }
                         Text(msg.text, color = NexoraColors.StarWhite)
                         val t = formatTime(msg.time)
-                        if (t.isNotEmpty()) {
-                            Text(t, style = MaterialTheme.typography.labelSmall, color = NexoraColors.Muted)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            if (t.isNotEmpty()) {
+                                Text(t, style = MaterialTheme.typography.labelSmall, color = NexoraColors.Muted)
+                            }
+                            if (mine) StatusTicks(statusOf(msg))
                         }
                     }
                 }
