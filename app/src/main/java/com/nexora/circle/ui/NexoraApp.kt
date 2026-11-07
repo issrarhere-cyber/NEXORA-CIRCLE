@@ -107,6 +107,7 @@ fun NexoraApp() {
     var showSignal by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
     var profileUid by rememberSaveable { mutableStateOf("") }
+    var beamUid by rememberSaveable { mutableStateOf("") }
 
     StarfieldBackground {
         Scaffold(
@@ -122,6 +123,7 @@ fun NexoraApp() {
                                 showSignal = false
                                 showNotifications = false
                                 profileUid = ""
+                                beamUid = ""
                             },
                             icon = {
                                 TabIcon(
@@ -149,6 +151,11 @@ fun NexoraApp() {
                             UserProfileScreen(
                                 uid = profileUid,
                                 onBack = { profileUid = "" },
+                                onBeam = { uid ->
+                                    beamUid = uid
+                                    profileUid = ""
+                                    selected = Tab.Comms
+                                },
                             )
                         } else if (showSearch) {
                             SearchScreen(
@@ -171,7 +178,7 @@ fun NexoraApp() {
                             )
                         }
                     }
-                    Tab.Comms -> CommsScreen()
+                    Tab.Comms -> CommsScreen(startUid = beamUid.ifEmpty { null })
                     Tab.Arcade -> PlaceholderScreen(
                         title = "Arcade (Games)",
                         stage = "Stage 6",
