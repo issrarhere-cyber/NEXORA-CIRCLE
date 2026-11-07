@@ -83,8 +83,10 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
+import com.nexora.circle.ui.components.FounderBadge
 import com.nexora.circle.ui.components.NexoraIcon
 import com.nexora.circle.ui.components.NxIcon
+import com.nexora.circle.ui.components.isFounder
 import com.nexora.circle.ui.theme.NexoraColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -590,16 +592,26 @@ fun OrbitScreen(
                                             Spacer(Modifier.height(2.dp))
                                         }
                                         // EDIT 3: name is now tappable
-                                        Text(
-                                            post.name.ifBlank { "Explorer" },
-                                            color = NexoraColors.StarWhite,
-                                            fontSize = 17.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.clickable {
-                                                if (mine) onOpenProfile()
-                                                else if (post.authorUid.isNotBlank()) onOpenUserProfile(post.authorUid)
-                                            },
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                post.name.ifBlank { "Explorer" },
+                                                color = NexoraColors.StarWhite,
+                                                fontSize = 17.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier
+                                                    .weight(1f, fill = false)
+                                                    .clickable {
+                                                        if (mine) onOpenProfile()
+                                                        else if (post.authorUid.isNotBlank()) onOpenUserProfile(post.authorUid)
+                                                    },
+                                            )
+                                            if (isFounder(post.authorUid)) {
+                                                Spacer(Modifier.width(6.dp))
+                                                FounderBadge(size = 18.dp)
+                                            }
+                                        }
                                         Text(
                                             (if (post.handle.isNotBlank()) "X.${post.handle} · " else "") + ago(post.time),
                                             color = NexoraColors.StarWhite.copy(alpha = 0.6f),
