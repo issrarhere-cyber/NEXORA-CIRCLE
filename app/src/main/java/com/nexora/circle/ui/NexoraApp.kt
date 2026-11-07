@@ -1,5 +1,6 @@
 package com.nexora.circle.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -30,20 +31,25 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
+import com.google.firebase.auth.FirebaseAuth
 import com.nexora.circle.ui.components.NexoraIcon
 import com.nexora.circle.ui.components.NxIcon
 import com.nexora.circle.ui.components.StarfieldBackground
 import com.nexora.circle.ui.screens.CommsScreen
+import com.nexora.circle.ui.screens.MyPostsScreen
 import com.nexora.circle.ui.screens.NexoraXScreen
 import com.nexora.circle.ui.screens.NotificationsScreen
 import com.nexora.circle.ui.screens.OrbitScreen
 import com.nexora.circle.ui.screens.PlaceholderScreen
+import com.nexora.circle.ui.screens.ProfileDestination
 import com.nexora.circle.ui.screens.ProfileScreen
 import com.nexora.circle.ui.screens.SearchScreen
 import com.nexora.circle.ui.screens.SignalScreen
+import com.nexora.circle.ui.screens.UserListScreen
 import com.nexora.circle.ui.screens.UserProfileScreen
 import com.nexora.circle.ui.theme.NexoraColors
 
@@ -115,6 +121,10 @@ fun NexoraApp() {
     var showNotifications by rememberSaveable { mutableStateOf(false) }
     var profileUid by rememberSaveable { mutableStateOf("") }
     var beamUid by rememberSaveable { mutableStateOf("") }
+    // Me tab sub-screens: "" = none, or "posts" / "followers" / "following"
+    var meSub by rememberSaveable { mutableStateOf("") }
+    var meUserUid by rememberSaveable { mutableStateOf("") }
+    val context = LocalContext.current
 
     // While typing in Comms: hide the bottom bar and drop its padding, because the
     // chat screen already adds keyboard padding itself (otherwise the gap is counted twice).
@@ -125,9 +135,12 @@ fun NexoraApp() {
     // System back button: close the open sub-screen first, then return to the Orbit tab,
     // and only then let the app close. (Placed before the content so a screen that has
     // its own BackHandler, e.g. a chat, still takes priority.)
-    val subScreenOpen = profileUid.isNotEmpty() || showSearch || showSignal || showNotifications
+    val subScreenOpen = profileUid.isNotEmpty() || showSearch || showSignal || showNotifications ||
+        meSub.isNotEmpty() || meUserUid.isNotEmpty()
     BackHandler(enabled = subScreenOpen || selected != Tab.Orbit) {
         when {
+            meUserUid.isNotEmpty() -> meUserUid = ""
+            meSub.isNotEmpty() -> meSub = ""
             profileUid.isNotEmpty() -> profileUid = ""
             showSearch -> showSearch = false
             showSignal -> showSignal = false
@@ -152,6 +165,8 @@ fun NexoraApp() {
                                     showNotifications = false
                                     profileUid = ""
                                     beamUid = ""
+                                    meSub = ""
+                                    meUserUid = ""
                                 },
                                 icon = {
                                     TabIcon(
@@ -225,7 +240,54 @@ fun NexoraApp() {
                         ),
                     )
                     Tab.NexoraX -> NexoraXScreen()
-                    Tab.Profile -> ProfileScreen()
+                    Tab.Profile -> {
+                        val myUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+                        if (meUserUid.isNotEmpty()) {
+                            UserProfileScreen(
+                                uid = meUserUid,
+                                onBack = { meUserUid = "" },
+                                onBeam = { uid ->
+                                    beamUid = uid
+                                    meUserUid = ""
+                                    meSub = ""
+                                    selected = Tab.Comms
+                                },
+                            )
+                        } else if (meSub == "posts") {
+                            MyPostsScreen(onBack = { meSub = "" })
+                        } else if (meSub == "followers") {
+                            UserListScreen(
+                                title = "Followers",
+                                ownerUid = myUid,
+                                collection = "followers",
+                                onBack = { meSub = "" },
+                                onUserClick = { uid -> meUserUid = uid },
+                            )
+                        } else if (meSub == "following") {
+                            UserListScreen(
+                                title = "Following",
+                                ownerUid = myUid,
+                                collection = "following",
+                                onBack = { meSub = "" },
+                                onUserClick = { uid -> meUserUid = uid },
+                            )
+                        } else {
+                            ProfileScreen(
+                                onOpen = { dest ->
+                                    when (dest) {
+                                        ProfileDestination.Posts -> meSub = "posts"
+                                        ProfileDestination.Followers -> meSub = "followers"
+                                        ProfileDestination.Following -> meSub = "following"
+                                        else -> Toast.makeText(
+                                            context,
+                                            "${dest.label} screen is not connected yet",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
