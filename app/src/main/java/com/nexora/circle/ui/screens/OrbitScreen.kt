@@ -12,10 +12,12 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,13 +35,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -59,6 +64,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +75,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -210,6 +219,118 @@ private fun NexoraTitle(refreshing: Boolean, pullProgress: Float) {
             maxLines = 1,
             softWrap = false,
         )
+    }
+}
+
+/** Professional dialog used for "New signal" and "Quote". */
+@Composable
+private fun SignalDialog(
+    title: String,
+    placeholder: String,
+    actionLabel: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onSend: () -> Unit,
+    allowBlank: Boolean = false,
+    maxChars: Int = 280,
+) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    val canSend = allowBlank || value.isNotBlank()
+    val nearLimit = value.length >= maxChars - 20
+    val shape = RoundedCornerShape(28.dp)
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .clip(shape)
+                .background(Color(0xFF14161C))
+                .border(1.dp, NexoraColors.PlasmaCyan.copy(alpha = 0.25f), shape)
+                .padding(horizontal = 20.dp, vertical = 22.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NexoraIcon(NxIcon.Orbit, tint = NexoraColors.NebulaPink, iconSize = 24.dp)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    title,
+                    color = NexoraColors.StarWhite,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = value,
+                onValueChange = { if (it.length <= maxChars) onValueChange(it) },
+                placeholder = {
+                    Text(
+                        placeholder,
+                        color = NexoraColors.StarWhite.copy(alpha = 0.45f),
+                        fontSize = 17.sp,
+                    )
+                },
+                textStyle = LocalTextStyle.current.copy(fontSize = 17.sp, lineHeight = 24.sp),
+                shape = RoundedCornerShape(16.dp),
+                minLines = 4,
+                maxLines = 8,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = NexoraColors.StarWhite,
+                    unfocusedTextColor = NexoraColors.StarWhite,
+                    cursorColor = NexoraColors.PlasmaCyan,
+                    focusedBorderColor = NexoraColors.PlasmaCyan,
+                    unfocusedBorderColor = NexoraColors.StarWhite.copy(alpha = 0.2f),
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+            )
+
+            Spacer(Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "${value.length}/$maxChars",
+                    color = if (nearLimit) NexoraColors.NebulaPink
+                    else NexoraColors.StarWhite.copy(alpha = 0.5f),
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) {
+                    Text(
+                        "Cancel",
+                        color = NexoraColors.StarWhite.copy(alpha = 0.7f),
+                        fontSize = 16.sp,
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                Button(
+                    onClick = onSend,
+                    enabled = canSend,
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NexoraColors.PlasmaCyan,
+                        contentColor = NexoraColors.SpaceBlack,
+                        disabledContainerColor = NexoraColors.PlasmaCyan.copy(alpha = 0.25f),
+                        disabledContentColor = NexoraColors.SpaceBlack.copy(alpha = 0.5f),
+                    ),
+                    contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp),
+                ) {
+                    Text(actionLabel, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
     }
 }
 
@@ -565,77 +686,60 @@ fun OrbitScreen(
         commentsFor?.let { CommentsDialog(it, myUid, name) { commentsFor = null } }
 
         quoteFor?.let { q ->
-            AlertDialog(
-                onDismissRequest = { quoteFor = null; quoteText = "" },
-                title = { Text("Quote") },
-                text = {
-                    OutlinedTextField(
-                        value = quoteText,
-                        onValueChange = { quoteText = it },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        db.collection("posts").add(
-                            hashMapOf(
-                                "authorUid" to myUid,
-                                "authorName" to name,
-                                "authorHandle" to handle,
-                                "text" to (quoteText.trim() + "\n\n" + q.text).trim(),
-                                "time" to System.currentTimeMillis(),
-                                "likes" to emptyList<String>(),
-                                "resignals" to emptyList<String>(),
-                                "resignalOf" to q.id,
-                                "resignalFromName" to q.name,
-                            )
+            SignalDialog(
+                title = "Quote",
+                placeholder = "Add your thoughts...",
+                actionLabel = "Send signal",
+                value = quoteText,
+                onValueChange = { quoteText = it },
+                onDismiss = { quoteFor = null; quoteText = "" },
+                allowBlank = true,
+                onSend = {
+                    db.collection("posts").add(
+                        hashMapOf(
+                            "authorUid" to myUid,
+                            "authorName" to name,
+                            "authorHandle" to handle,
+                            "text" to (quoteText.trim() + "\n\n" + q.text).trim(),
+                            "time" to System.currentTimeMillis(),
+                            "likes" to emptyList<String>(),
+                            "resignals" to emptyList<String>(),
+                            "resignalOf" to q.id,
+                            "resignalFromName" to q.name,
                         )
-                        db.collection("posts").document(q.id)
-                            .update("resignals", FieldValue.arrayUnion(myUid))
-                        quoteFor = null
-                        quoteText = ""
-                    }) { Text("Post") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { quoteFor = null; quoteText = "" }) {
-                        Text("Cancel")
-                    }
+                    )
+                    db.collection("posts").document(q.id)
+                        .update("resignals", FieldValue.arrayUnion(myUid))
+                    quoteFor = null
+                    quoteText = ""
                 },
             )
         }
 
         if (composing) {
-            AlertDialog(
-                onDismissRequest = { composing = false },
-                title = { Text("New signal") },
-                text = {
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = { draft = it },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        if (draft.isNotBlank()) {
-                            db.collection("posts").add(
-                                hashMapOf(
-                                    "authorUid" to myUid,
-                                    "authorName" to name,
-                                    "authorHandle" to handle,
-                                    "text" to draft.trim(),
-                                    "time" to System.currentTimeMillis(),
-                                    "likes" to emptyList<String>(),
-                                    "resignals" to emptyList<String>(),
-                                )
+            SignalDialog(
+                title = "New signal",
+                placeholder = "What's your signal...?",
+                actionLabel = "Send signal",
+                value = draft,
+                onValueChange = { draft = it },
+                onDismiss = { composing = false },
+                onSend = {
+                    if (draft.isNotBlank()) {
+                        db.collection("posts").add(
+                            hashMapOf(
+                                "authorUid" to myUid,
+                                "authorName" to name,
+                                "authorHandle" to handle,
+                                "text" to draft.trim(),
+                                "time" to System.currentTimeMillis(),
+                                "likes" to emptyList<String>(),
+                                "resignals" to emptyList<String>(),
                             )
-                        }
-                        draft = ""
-                        composing = false
-                    }) { Text("Post") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { composing = false }) { Text("Cancel") }
+                        )
+                    }
+                    draft = ""
+                    composing = false
                 },
             )
         }
