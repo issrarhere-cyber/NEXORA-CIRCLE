@@ -149,6 +149,7 @@ fun OrbitScreen(
     onOpenSearch: () -> Unit = {},
     onOpenSignal: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
+    onOpenUserProfile: (String) -> Unit = {},   // EDIT 1 (new)
     signalCount: Int = 0,
     beamCount: Int = 0,
     notifCount: Int = 0,
@@ -328,11 +329,17 @@ fun OrbitScreen(
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Avatar(
-                                if (mine) photo else null,
-                                (post.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
-                                40.dp,
-                            )
+                            // EDIT 2: avatar is now tappable
+                            Box(modifier = Modifier.clickable {
+                                if (mine) onOpenProfile()
+                                else if (post.authorUid.isNotBlank()) onOpenUserProfile(post.authorUid)
+                            }) {
+                                Avatar(
+                                    if (mine) photo else null,
+                                    (post.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
+                                    40.dp,
+                                )
+                            }
                             Column(modifier = Modifier.weight(1f)) {
                                 if (post.resignalOf.isNotEmpty()) {
                                     Text(
@@ -340,10 +347,15 @@ fun OrbitScreen(
                                         color = NexoraColors.StarWhite,
                                     )
                                 }
+                                // EDIT 3: name is now tappable
                                 Text(
                                     post.name.ifBlank { "Explorer" },
                                     color = NexoraColors.StarWhite,
                                     fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable {
+                                        if (mine) onOpenProfile()
+                                        else if (post.authorUid.isNotBlank()) onOpenUserProfile(post.authorUid)
+                                    },
                                 )
                                 Text(
                                     (if (post.handle.isNotBlank()) "X.${post.handle} · " else "") + ago(post.time),
