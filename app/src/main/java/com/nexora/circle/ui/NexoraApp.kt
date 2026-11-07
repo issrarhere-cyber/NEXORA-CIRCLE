@@ -167,6 +167,7 @@ fun NexoraApp() {
                                 onOpenSearch = { showSearch = true },
                                 onOpenSignal = { showSignal = true },
                                 onOpenNotifications = { showNotifications = true },
+                                onOpenUserProfile = { uid -> profileUid = uid },
                             )
                         }
                     }
