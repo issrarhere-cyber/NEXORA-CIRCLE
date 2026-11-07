@@ -72,6 +72,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -568,11 +569,25 @@ fun OrbitScreen(
                                     }
                                     Column(modifier = Modifier.weight(1f)) {
                                         if (post.resignalOf.isNotEmpty()) {
-                                            Text(
-                                                "Resignaled from ${post.resignalFromName.ifBlank { "Explorer" }}",
-                                                color = NexoraColors.StarWhite.copy(alpha = 0.6f),
-                                                fontSize = 13.sp,
-                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    "Resignaled signal by",
+                                                    color = NexoraColors.StarWhite.copy(alpha = 0.6f),
+                                                    fontSize = 13.sp,
+                                                    maxLines = 1,
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(
+                                                    post.resignalFromName.ifBlank { "Explorer" },
+                                                    color = NexoraColors.PlasmaCyan,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false),
+                                                )
+                                            }
+                                            Spacer(Modifier.height(2.dp))
                                         }
                                         // EDIT 3: name is now tappable
                                         Text(
