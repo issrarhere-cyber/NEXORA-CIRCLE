@@ -3,7 +3,9 @@ package com.nexora.circle.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.NavigationBar
@@ -25,6 +27,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import com.nexora.circle.ui.components.NexoraIcon
 import com.nexora.circle.ui.components.NxIcon
@@ -109,42 +113,56 @@ fun NexoraApp() {
     var profileUid by rememberSaveable { mutableStateOf("") }
     var beamUid by rememberSaveable { mutableStateOf("") }
 
+    // While typing in Comms: hide the bottom bar and drop its padding, because the
+    // chat screen already adds keyboard padding itself (otherwise the gap is counted twice).
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val hideBar = imeVisible && selected == Tab.Comms
+    val layoutDirection = LocalLayoutDirection.current
+
     StarfieldBackground {
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
-                NavigationBar(containerColor = NexoraColors.Panel) {
-                    Tab.values().forEach { tab ->
-                        NavigationBarItem(
-                            selected = selected == tab,
-                            onClick = {
-                                selected = tab
-                                showSearch = false
-                                showSignal = false
-                                showNotifications = false
-                                profileUid = ""
-                                beamUid = ""
-                            },
-                            icon = {
-                                TabIcon(
-                                    tab,
-                                    if (selected == tab) NexoraColors.SpaceBlack else NexoraColors.Muted,
-                                )
-                            },
-                            label = { Text(tab.label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = NexoraColors.SpaceBlack,
-                                selectedTextColor = NexoraColors.PlasmaCyan,
-                                indicatorColor = NexoraColors.PlasmaCyan,
-                                unselectedIconColor = NexoraColors.Muted,
-                                unselectedTextColor = NexoraColors.Muted,
-                            ),
-                        )
+                if (!hideBar) {
+                    NavigationBar(containerColor = NexoraColors.Panel) {
+                        Tab.values().forEach { tab ->
+                            NavigationBarItem(
+                                selected = selected == tab,
+                                onClick = {
+                                    selected = tab
+                                    showSearch = false
+                                    showSignal = false
+                                    showNotifications = false
+                                    profileUid = ""
+                                    beamUid = ""
+                                },
+                                icon = {
+                                    TabIcon(
+                                        tab,
+                                        if (selected == tab) NexoraColors.SpaceBlack else NexoraColors.Muted,
+                                    )
+                                },
+                                label = { Text(tab.label) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = NexoraColors.SpaceBlack,
+                                    selectedTextColor = NexoraColors.PlasmaCyan,
+                                    indicatorColor = NexoraColors.PlasmaCyan,
+                                    unselectedIconColor = NexoraColors.Muted,
+                                    unselectedTextColor = NexoraColors.Muted,
+                                ),
+                            )
+                        }
                     }
                 }
             },
         ) { padding: PaddingValues ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
+            val contentPadding = PaddingValues(
+                start = padding.calculateStartPadding(layoutDirection),
+                top = padding.calculateTopPadding(),
+                end = padding.calculateEndPadding(layoutDirection),
+                bottom = if (hideBar) 0.dp else padding.calculateBottomPadding(),
+            )
+            Box(Modifier.fillMaxSize().padding(contentPadding)) {
                 when (selected) {
                     Tab.Orbit -> {
                         if (profileUid.isNotEmpty()) {
