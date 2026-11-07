@@ -3,6 +3,7 @@ package com.nexora.circle.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +75,9 @@ private data class Post(
     val resignals: List<String>,
     val resignalOf: String,
     val resignalFromName: String,
+    val views: Int,
+    val saved: List<String>,
+    val visibility: String,
 )
 
 private fun ago(time: Long): String {
@@ -173,6 +178,16 @@ fun OrbitScreen(
     var draft by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
     var commentsFor by remember { mutableStateOf<String?>(null) }
+    var quoteFor by remember { mutableStateOf<Post?>(null) }
+    var quoteText by remember { mutableStateOf("") }
+
+    // TODO: fill this with matched users' uids when Signal/match data is connected
+    val matches = remember { emptySet<String>() }
+    val visiblePosts = posts.filter {
+        it.authorUid == myUid ||
+            it.visibility == "Public" ||
+            (it.visibility == "Only Match Signaled" && matches.contains(it.authorUid))
+    }
 
     DisposableEffect(myUid) {
         val reg = db.collection("posts")
@@ -191,6 +206,8 @@ fun OrbitScreen(
                         val likes = (d.get("likes") as? List<String>) ?: emptyList()
                         @Suppress("UNCHECKED_CAST")
                         val resignals = (d.get("resignals") as? List<String>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val saved = (d.get("saved") as? List<String>) ?: emptyList()
                         Post(
                             id = d.id,
                             authorUid = d.getString("authorUid") ?: "",
@@ -202,6 +219,9 @@ fun OrbitScreen(
                             resignals = resignals,
                             resignalOf = d.getString("resignalOf") ?: "",
                             resignalFromName = d.getString("resignalFromName") ?: "",
+                            views = (d.getLong("views") ?: 0L).toInt(),
+                            saved = saved,
+                            visibility = d.getString("visibility") ?: "Public",
                         )
                     }
                     posts.clear()
@@ -282,7 +302,7 @@ fun OrbitScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(32.dp),
                 )
-            } else if (posts.isEmpty()) {
+            } else if (visiblePosts.isEmpty()) {
                 Text(
                     "No posts yet. Tap + to share your first signal.",
                     color = NexoraColors.StarWhite,
@@ -291,10 +311,18 @@ fun OrbitScreen(
                 )
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(posts, key = { it.id }) { post ->
+                    items(visiblePosts, key = { it.id }) { post ->
                         val mine = post.authorUid == myUid
                         val liked = post.likes.contains(myUid)
                         val resignaled = post.resignals.contains(myUid)
+
+                        LaunchedEffect(post.id) {
+                            if (!mine && myUid.isNotEmpty()) {
+                                db.collection("posts").document(post.id)
+                                    .update("views", FieldValue.increment(1))
+                            }
+                        }
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -355,6 +383,33 @@ fun OrbitScreen(
                                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                         )
                                     },
+                                    viewCount = post.views,
+                                    saved = post.saved.contains(myUid),
+                                    visibility = post.visibility,
+                                    isOwnPost = mine,
+                                    onQuote = { quoteFor = post },
+                                    onReactWithVideo = {
+                                        Toast.makeText(
+                                            context,
+                                            "Video reactions coming soon",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    },
+                                    onSave = {
+                                        val isSaved = post.saved.contains(myUid)
+                                        db.collection("posts").document(post.id).update(
+                                            "saved",
+                                            if (isSaved) FieldValue.arrayRemove(myUid)
+                                            else FieldValue.arrayUnion(myUid),
+                                        )
+                                    },
+                                    onVisibilityChange = { v ->
+                                        db.collection("posts").document(post.id)
+                                            .update("visibility", v)
+                                    },
+                                    onDelete = {
+                                        db.collection("posts").document(post.id).delete()
+                                    },
                                 )
                             }
                         }
@@ -377,6 +432,46 @@ fun OrbitScreen(
         }
 
         commentsFor?.let { CommentsDialog(it, myUid, name) { commentsFor = null } }
+
+        quoteFor?.let { q ->
+            AlertDialog(
+                onDismissRequest = { quoteFor = null; quoteText = "" },
+                title = { Text("Quote") },
+                text = {
+                    OutlinedTextField(
+                        value = quoteText,
+                        onValueChange = { quoteText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        db.collection("posts").add(
+                            hashMapOf(
+                                "authorUid" to myUid,
+                                "authorName" to name,
+                                "authorHandle" to handle,
+                                "text" to (quoteText.trim() + "\n\n" + q.text).trim(),
+                                "time" to System.currentTimeMillis(),
+                                "likes" to emptyList<String>(),
+                                "resignals" to emptyList<String>(),
+                                "resignalOf" to q.id,
+                                "resignalFromName" to q.name,
+                            )
+                        )
+                        db.collection("posts").document(q.id)
+                            .update("resignals", FieldValue.arrayUnion(myUid))
+                        quoteFor = null
+                        quoteText = ""
+                    }) { Text("Post") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { quoteFor = null; quoteText = "" }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
 
         if (composing) {
             AlertDialog(
