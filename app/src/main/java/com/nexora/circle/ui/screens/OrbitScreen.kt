@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Search
@@ -248,7 +247,7 @@ fun OrbitScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     HeaderIcon(Icons.Outlined.Search, "Search", 0) { onOpenSearch() }
                     HeaderIcon(Icons.Outlined.PersonAdd, "Signal", signalCount) { onOpenSignal() }
-                    HeaderIcon(Icons.AutoMirrored.Outlined.Send, "Beam", beamCount) { onOpenComms() }
+                    BeamHeaderIcon(beamCount) { onOpenComms() }
                     HeaderIcon(Icons.Outlined.Notifications, "Notifications", notifCount) { onOpenNotifications() }
                 }
             }
