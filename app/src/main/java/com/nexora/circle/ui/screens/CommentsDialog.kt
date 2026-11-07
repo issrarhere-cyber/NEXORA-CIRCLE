@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.google.firebase.firestore.FirebaseFirestore
@@ -31,11 +32,17 @@ fun CommentsDialog(postId: String, myUid: String, myName: String, onDismiss: () 
     val db = remember { FirebaseFirestore.getInstance() }
     val comments = remember { mutableStateListOf<CommentItem>() }
     var draft by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
 
     DisposableEffect(postId) {
         val reg = db.collection("posts").document(postId).collection("comments")
             .orderBy("time", Query.Direction.ASCENDING)
-            .addSnapshotListener { snap, _ ->
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    errorMsg = "Load failed: ${err.localizedMessage}"
+                    return@addSnapshotListener
+                }
                 if (snap != null) {
                     comments.clear()
                     comments.addAll(
@@ -75,11 +82,23 @@ fun CommentsDialog(postId: String, myUid: String, myName: String, onDismiss: () 
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("Write a comment") },
                 )
+                if (errorMsg.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(errorMsg, color = Color(0xFFFF4D5E))
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                if (draft.isNotBlank()) {
+            TextButton(
+                enabled = !sending,
+                onClick = {
+                    if (draft.isBlank()) return@TextButton
+                    if (myUid.isBlank()) {
+                        errorMsg = "You are not signed in."
+                        return@TextButton
+                    }
+                    sending = true
+                    errorMsg = ""
                     db.collection("posts").document(postId).collection("comments").add(
                         hashMapOf(
                             "uid" to myUid,
@@ -87,10 +106,15 @@ fun CommentsDialog(postId: String, myUid: String, myName: String, onDismiss: () 
                             "text" to draft.trim(),
                             "time" to System.currentTimeMillis(),
                         )
-                    )
-                    draft = ""
-                }
-            }) { Text("Send") }
+                    ).addOnSuccessListener {
+                        draft = ""
+                        sending = false
+                    }.addOnFailureListener { e ->
+                        errorMsg = "Send failed: ${e.localizedMessage}"
+                        sending = false
+                    }
+                },
+            ) { Text(if (sending) "Sending..." else "Send") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
