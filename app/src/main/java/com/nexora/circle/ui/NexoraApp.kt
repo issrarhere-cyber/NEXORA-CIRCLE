@@ -1,5 +1,6 @@
 package com.nexora.circle.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -120,6 +121,20 @@ fun NexoraApp() {
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val hideBar = imeVisible && selected == Tab.Comms
     val layoutDirection = LocalLayoutDirection.current
+
+    // System back button: close the open sub-screen first, then return to the Orbit tab,
+    // and only then let the app close. (Placed before the content so a screen that has
+    // its own BackHandler, e.g. a chat, still takes priority.)
+    val subScreenOpen = profileUid.isNotEmpty() || showSearch || showSignal || showNotifications
+    BackHandler(enabled = subScreenOpen || selected != Tab.Orbit) {
+        when {
+            profileUid.isNotEmpty() -> profileUid = ""
+            showSearch -> showSearch = false
+            showSignal -> showSignal = false
+            showNotifications -> showNotifications = false
+            else -> selected = Tab.Orbit
+        }
+    }
 
     StarfieldBackground {
         Scaffold(
