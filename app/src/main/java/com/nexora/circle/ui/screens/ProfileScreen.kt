@@ -187,9 +187,6 @@ fun ProfileScreen(onOpen: ((ProfileDestination) -> Unit)? = null) {
                 usernameChangedAt = snap.getLong("usernameChangedAt") ?: 0L
                 verified = snap.getBoolean("verified") == true
                 userTitle = snap.getString("title") ?: ""
-                postsCount = snap.getLong("postsCount") ?: 0L
-                followersCount = snap.getLong("followersCount") ?: 0L
-                followingCount = snap.getLong("followingCount") ?: 0L
                 if (!editing) {
                     name = savedName
                     username = savedUsername
@@ -238,6 +235,22 @@ fun ProfileScreen(onOpen: ((ProfileDestination) -> Unit)? = null) {
             }
         }
         onDispose { reg.remove() }
+    }
+
+    // Real counts, counted live from the actual data (the old profile count fields were never written).
+    DisposableEffect(uid) {
+        if (uid == null) return@DisposableEffect onDispose { }
+        val postsReg = db.collection("posts").whereEqualTo("authorUid", uid)
+            .addSnapshotListener { s, _ -> if (s != null) postsCount = s.size().toLong() }
+        val followersReg = db.collection("users").document(uid).collection("followers")
+            .addSnapshotListener { s, _ -> if (s != null) followersCount = s.size().toLong() }
+        val followingReg = db.collection("users").document(uid).collection("following")
+            .addSnapshotListener { s, _ -> if (s != null) followingCount = s.size().toLong() }
+        onDispose {
+            postsReg.remove()
+            followersReg.remove()
+            followingReg.remove()
+        }
     }
 
     val initial = (savedName.trim().firstOrNull()?.uppercaseChar() ?: '?').toString()
