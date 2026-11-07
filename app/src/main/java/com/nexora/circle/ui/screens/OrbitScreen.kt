@@ -4,6 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.widget.Toast
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,11 +36,14 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -49,19 +59,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.Source
 import com.nexora.circle.ui.components.NexoraIcon
 import com.nexora.circle.ui.components.NxIcon
 import com.nexora.circle.ui.theme.NexoraColors
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 private data class Post(
     val id: String,
@@ -106,7 +122,12 @@ private fun Avatar(photo: ImageBitmap?, initial: String, size: Dp) {
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Text(initial, color = NexoraColors.SpaceBlack, fontWeight = FontWeight.Bold)
+            Text(
+                initial,
+                color = NexoraColors.SpaceBlack,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+            )
         }
     }
 }
@@ -141,6 +162,58 @@ private fun HeaderIcon(
     }
 }
 
+/**
+ * Top-bar title: pink orbit logo + "NEXORA".
+ * - Pull karne par logo thoda aage khiskta hai.
+ * - Refresh chalte waqt logo aage-peeche hilta hai aur phone halka vibrate karta hai.
+ */
+@Composable
+private fun NexoraTitle(refreshing: Boolean, pullProgress: Float) {
+    val haptic = LocalHapticFeedback.current
+
+    val infinite = rememberInfiniteTransition(label = "orbitSwing")
+    val swing by infinite.animateFloat(
+        initialValue = -10f,
+        targetValue = 10f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(320, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "swing",
+    )
+
+    LaunchedEffect(refreshing) {
+        if (refreshing) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            while (isActive) {
+                delay(320)
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+        }
+    }
+
+    val shift = if (refreshing) swing else pullProgress.coerceIn(0f, 1f) * 8f
+
+    Row(
+        modifier = Modifier.offset(x = shift.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        NexoraIcon(NxIcon.Orbit, tint = NexoraColors.NebulaPink, iconSize = 24.dp)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "NEXORA",
+            color = NexoraColors.StarWhite,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.5.sp,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OrbitScreen(
     onOpenComms: () -> Unit,
@@ -180,6 +253,10 @@ fun OrbitScreen(
     var commentsFor by remember { mutableStateOf<String?>(null) }
     var quoteFor by remember { mutableStateOf<Post?>(null) }
     var quoteText by remember { mutableStateOf("") }
+
+    // Pull-to-refresh state
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullState = rememberPullToRefreshState()
 
     // TODO: fill this with matched users' uids when Signal/match data is connected
     val matches = remember { emptySet<String>() }
@@ -239,12 +316,20 @@ fun OrbitScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Box(modifier = Modifier.clickable { onOpenProfile() }) {
                     Avatar(photo, initial, 36.dp)
                 }
-                NexoraIcon(NxIcon.Orbit, tint = NexoraColors.PlasmaCyan, iconSize = 32.dp)
+                // Center: pink orbit logo + NEXORA
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    NexoraTitle(
+                        refreshing = isRefreshing,
+                        pullProgress = pullState.distanceFraction,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     HeaderIcon(Icons.Outlined.Search, "Search", 0) { onOpenSearch() }
                     HeaderIcon(Icons.Outlined.PersonAdd, "Signal", signalCount) { onOpenSignal() }
@@ -265,6 +350,7 @@ fun OrbitScreen(
                         Text(
                             label,
                             color = NexoraColors.StarWhite,
+                            fontSize = 16.sp,
                             fontWeight = if (tab == i) FontWeight.Bold else FontWeight.Normal,
                         )
                         Spacer(Modifier.height(10.dp))
@@ -287,141 +373,170 @@ fun OrbitScreen(
                     .background(NexoraColors.Divider)
             )
 
-            if (errorMsg.isNotEmpty()) {
-                Text(
-                    errorMsg,
-                    color = NexoraColors.NebulaPink,
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                )
-            }
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    isRefreshing = true
+                    // Server se fresh posts mango; listener list ko khud update kar dega.
+                    db.collection("posts")
+                        .orderBy("time", Query.Direction.DESCENDING)
+                        .limit(100)
+                        .get(Source.SERVER)
+                        .addOnCompleteListener { isRefreshing = false }
+                },
+                state = pullState,
+                modifier = Modifier.fillMaxSize(),
+                indicator = {}, // spinner nahi, logo hi indicator hai
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
 
-            if (tab == 1) {
-                Text(
-                    "Posts from people you follow will appear here. Coming soon.",
-                    color = NexoraColors.StarWhite,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(32.dp),
-                )
-            } else if (visiblePosts.isEmpty()) {
-                Text(
-                    "No posts yet. Tap + to share your first signal.",
-                    color = NexoraColors.StarWhite,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(32.dp),
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(visiblePosts, key = { it.id }) { post ->
-                        val mine = post.authorUid == myUid
-                        val liked = post.likes.contains(myUid)
-                        val resignaled = post.resignals.contains(myUid)
+                    if (errorMsg.isNotEmpty()) {
+                        Text(
+                            errorMsg,
+                            color = NexoraColors.NebulaPink,
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        )
+                    }
 
-                        LaunchedEffect(post.id) {
-                            if (!mine && myUid.isNotEmpty()) {
-                                db.collection("posts").document(post.id)
-                                    .update("views", FieldValue.increment(1))
-                            }
-                        }
+                    if (tab == 1) {
+                        Text(
+                            "Posts from people you follow will appear here. Coming soon.",
+                            color = NexoraColors.StarWhite,
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        )
+                    } else if (visiblePosts.isEmpty()) {
+                        Text(
+                            "No posts yet. Tap + to share your first signal.",
+                            color = NexoraColors.StarWhite,
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        )
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(visiblePosts, key = { it.id }) { post ->
+                                val mine = post.authorUid == myUid
+                                val liked = post.likes.contains(myUid)
+                                val resignaled = post.resignals.contains(myUid)
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            // EDIT 2: avatar is now tappable
-                            Box(modifier = Modifier.clickable {
-                                if (mine) onOpenProfile()
-                                else if (post.authorUid.isNotBlank()) onOpenUserProfile(post.authorUid)
-                            }) {
-                                Avatar(
-                                    if (mine) photo else null,
-                                    (post.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
-                                    40.dp,
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                if (post.resignalOf.isNotEmpty()) {
-                                    Text(
-                                        "Resignaled from ${post.resignalFromName.ifBlank { "Explorer" }}",
-                                        color = NexoraColors.StarWhite,
-                                    )
+                                LaunchedEffect(post.id) {
+                                    if (!mine && myUid.isNotEmpty()) {
+                                        db.collection("posts").document(post.id)
+                                            .update("views", FieldValue.increment(1))
+                                    }
                                 }
-                                // EDIT 3: name is now tappable
-                                Text(
-                                    post.name.ifBlank { "Explorer" },
-                                    color = NexoraColors.StarWhite,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.clickable {
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    // EDIT 2: avatar is now tappable
+                                    Box(modifier = Modifier.clickable {
                                         if (mine) onOpenProfile()
                                         else if (post.authorUid.isNotBlank()) onOpenUserProfile(post.authorUid)
-                                    },
-                                )
-                                Text(
-                                    (if (post.handle.isNotBlank()) "X.${post.handle} · " else "") + ago(post.time),
-                                    color = NexoraColors.StarWhite,
-                                )
-                                Spacer(Modifier.height(6.dp))
-                                Text(post.text, color = NexoraColors.StarWhite)
-                                Spacer(Modifier.height(8.dp))
-                                PostActionBar(
-                                    liked = liked,
-                                    resignaled = resignaled,
-                                    likeCount = post.likes.size,
-                                    resignalCount = post.resignals.size,
-                                    onComment = { commentsFor = post.id },
-                                    onLike = {
-                                        db.collection("posts").document(post.id).update(
-                                            "likes",
-                                            if (liked) FieldValue.arrayRemove(myUid)
-                                            else FieldValue.arrayUnion(myUid),
+                                    }) {
+                                        Avatar(
+                                            if (mine) photo else null,
+                                            (post.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
+                                            44.dp,
                                         )
-                                    },
-                                    onResignal = {
-                                        db.collection("posts").document(post.id).update(
-                                            "resignals",
-                                            if (resignaled) FieldValue.arrayRemove(myUid)
-                                            else FieldValue.arrayUnion(myUid),
-                                        )
-                                    },
-                                    onShare = {
-                                        val send = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, post.text)
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        if (post.resignalOf.isNotEmpty()) {
+                                            Text(
+                                                "Resignaled from ${post.resignalFromName.ifBlank { "Explorer" }}",
+                                                color = NexoraColors.StarWhite.copy(alpha = 0.6f),
+                                                fontSize = 13.sp,
+                                            )
                                         }
-                                        context.startActivity(
-                                            Intent.createChooser(send, "Share")
-                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        // EDIT 3: name is now tappable
+                                        Text(
+                                            post.name.ifBlank { "Explorer" },
+                                            color = NexoraColors.StarWhite,
+                                            fontSize = 17.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.clickable {
+                                                if (mine) onOpenProfile()
+                                                else if (post.authorUid.isNotBlank()) onOpenUserProfile(post.authorUid)
+                                            },
                                         )
-                                    },
-                                    viewCount = post.views,
-                                    saved = post.saved.contains(myUid),
-                                    visibility = post.visibility,
-                                    isOwnPost = mine,
-                                    onQuote = { quoteFor = post },
-                                    onReactWithVideo = {
-                                        Toast.makeText(
-                                            context,
-                                            "Video reactions coming soon",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                    },
-                                    onSave = {
-                                        val isSaved = post.saved.contains(myUid)
-                                        db.collection("posts").document(post.id).update(
-                                            "saved",
-                                            if (isSaved) FieldValue.arrayRemove(myUid)
-                                            else FieldValue.arrayUnion(myUid),
+                                        Text(
+                                            (if (post.handle.isNotBlank()) "X.${post.handle} · " else "") + ago(post.time),
+                                            color = NexoraColors.StarWhite.copy(alpha = 0.6f),
+                                            fontSize = 13.sp,
                                         )
-                                    },
-                                    onVisibilityChange = { v ->
-                                        db.collection("posts").document(post.id)
-                                            .update("visibility", v)
-                                    },
-                                    onDelete = {
-                                        db.collection("posts").document(post.id).delete()
-                                    },
-                                )
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(
+                                            post.text,
+                                            color = NexoraColors.StarWhite,
+                                            fontSize = 16.sp,
+                                            lineHeight = 23.sp,
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        PostActionBar(
+                                            liked = liked,
+                                            resignaled = resignaled,
+                                            likeCount = post.likes.size,
+                                            resignalCount = post.resignals.size,
+                                            onComment = { commentsFor = post.id },
+                                            onLike = {
+                                                db.collection("posts").document(post.id).update(
+                                                    "likes",
+                                                    if (liked) FieldValue.arrayRemove(myUid)
+                                                    else FieldValue.arrayUnion(myUid),
+                                                )
+                                            },
+                                            onResignal = {
+                                                db.collection("posts").document(post.id).update(
+                                                    "resignals",
+                                                    if (resignaled) FieldValue.arrayRemove(myUid)
+                                                    else FieldValue.arrayUnion(myUid),
+                                                )
+                                            },
+                                            onShare = {
+                                                val send = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(Intent.EXTRA_TEXT, post.text)
+                                                }
+                                                context.startActivity(
+                                                    Intent.createChooser(send, "Share")
+                                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                )
+                                            },
+                                            viewCount = post.views,
+                                            saved = post.saved.contains(myUid),
+                                            visibility = post.visibility,
+                                            isOwnPost = mine,
+                                            onQuote = { quoteFor = post },
+                                            onReactWithVideo = {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Video reactions coming soon",
+                                                    Toast.LENGTH_SHORT,
+                                                ).show()
+                                            },
+                                            onSave = {
+                                                val isSaved = post.saved.contains(myUid)
+                                                db.collection("posts").document(post.id).update(
+                                                    "saved",
+                                                    if (isSaved) FieldValue.arrayRemove(myUid)
+                                                    else FieldValue.arrayUnion(myUid),
+                                                )
+                                            },
+                                            onVisibilityChange = { v ->
+                                                db.collection("posts").document(post.id)
+                                                    .update("visibility", v)
+                                            },
+                                            onDelete = {
+                                                db.collection("posts").document(post.id).delete()
+                                            },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -439,7 +554,12 @@ fun OrbitScreen(
                 .clickable { composing = true },
             contentAlignment = Alignment.Center,
         ) {
-            Text("+", color = NexoraColors.SpaceBlack, fontWeight = FontWeight.Bold)
+            Text(
+                "+",
+                color = NexoraColors.SpaceBlack,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+            )
         }
 
         commentsFor?.let { CommentsDialog(it, myUid, name) { commentsFor = null } }
