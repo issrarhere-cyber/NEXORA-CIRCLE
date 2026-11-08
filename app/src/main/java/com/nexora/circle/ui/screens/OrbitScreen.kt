@@ -102,20 +102,15 @@ private data class Post(
     val resignals: List<String>,
     val resignalOf: String,
     val resignalFromName: String,
+    val resignalFromUid: String,
+    val resignalFromHandle: String,
+    val resignalFromTime: Long,
+    val quoteText: String,
+    val originalText: String,
     val views: Int,
     val saved: List<String>,
     val visibility: String,
 )
-
-private fun ago(time: Long): String {
-    val m = (System.currentTimeMillis() - time) / 60000
-    return when {
-        m < 1 -> "now"
-        m < 60 -> "${m}m"
-        m < 1440 -> "${m / 60}h"
-        else -> "${m / 1440}d"
-    }
-}
 
 @Composable
 private fun Avatar(photo: ImageBitmap?, initial: String, size: Dp) {
@@ -346,7 +341,7 @@ fun OrbitScreen(
     onOpenSearch: () -> Unit = {},
     onOpenSignal: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
-    onOpenUserProfile: (String) -> Unit = {},   // EDIT 1 (new)
+    onOpenUserProfile: (String) -> Unit = {},
     signalCount: Int = 0,
     beamCount: Int = 0,
     notifCount: Int = 0,
@@ -375,7 +370,7 @@ fun OrbitScreen(
     var draft by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
     var commentsFor by remember { mutableStateOf<String?>(null) }
-    var quoteFor by remember { mutableStateOf<Post?>(null) }
+    var quoteSource by remember { mutableStateOf<ResignalSource?>(null) }
     var quoteText by remember { mutableStateOf("") }
 
     // Pull-to-refresh state
@@ -445,6 +440,11 @@ fun OrbitScreen(
                             resignals = resignals,
                             resignalOf = d.getString("resignalOf") ?: "",
                             resignalFromName = d.getString("resignalFromName") ?: "",
+                            resignalFromUid = d.getString("resignalFromUid") ?: "",
+                            resignalFromHandle = d.getString("resignalFromHandle") ?: "",
+                            resignalFromTime = d.getLong("resignalFromTime") ?: 0L,
+                            quoteText = d.getString("quoteText") ?: "",
+                            originalText = d.getString("originalText") ?: "",
                             views = (d.getLong("views") ?: 0L).toInt(),
                             saved = saved,
                             visibility = d.getString("visibility") ?: "Public",
@@ -566,8 +566,53 @@ fun OrbitScreen(
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(feedPosts, key = { it.id }) { post ->
                                 val mine = post.authorUid == myUid
+                                val found = if (post.resignalOf.isNotEmpty()) {
+                                    posts.firstOrNull { it.id == post.resignalOf }
+                                } else {
+                                    null
+                                }
+                                val d = buildPostDisplay(
+                                    id = post.id,
+                                    authorUid = post.authorUid,
+                                    authorName = post.name,
+                                    authorHandle = post.handle,
+                                    text = post.text,
+                                    time = post.time,
+                                    resignalOf = post.resignalOf,
+                                    resignalFromUid = post.resignalFromUid,
+                                    resignalFromName = post.resignalFromName,
+                                    resignalFromHandle = post.resignalFromHandle,
+                                    resignalFromTime = post.resignalFromTime,
+                                    quoteText = post.quoteText,
+                                    originalText = post.originalText,
+                                    foundUid = found?.authorUid.orEmpty(),
+                                    foundName = found?.name.orEmpty(),
+                                    foundHandle = found?.handle.orEmpty(),
+                                    foundTime = found?.time ?: 0L,
+                                    foundText = found?.text.orEmpty(),
+                                )
+                                val isRepost = d.repostedBy.isNotEmpty()
                                 val liked = post.likes.contains(myUid)
-                                val resignaled = post.resignals.contains(myUid)
+                                val resignaled = if (isRepost) {
+                                    mine || found?.resignals?.contains(myUid) == true
+                                } else {
+                                    post.resignals.contains(myUid)
+                                }
+                                val source = ResignalSource(
+                                    id = d.baseId,
+                                    authorUid = d.uid,
+                                    name = d.name,
+                                    handle = d.handle,
+                                    text = d.body,
+                                    time = d.time,
+                                    visibility = post.visibility,
+                                )
+                                val openAuthor: () -> Unit = {
+                                    if (d.uid.isNotBlank()) {
+                                        if (d.uid == myUid) onOpenProfile()
+                                        else onOpenUserProfile(d.uid)
+                                    }
+                                }
 
                                 LaunchedEffect(post.id) {
                                     if (!mine && myUid.isNotEmpty()) {
@@ -582,72 +627,15 @@ fun OrbitScreen(
                                         .padding(horizontal = 16.dp, vertical = 12.dp),
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    // EDIT 2: avatar is now tappable
-                                    Box(modifier = Modifier.clickable {
-                                        if (mine) onOpenProfile()
-                                        else if (post.authorUid.isNotBlank()) onOpenUserProfile(post.authorUid)
-                                    }) {
+                                    Box(modifier = Modifier.clickable { openAuthor() }) {
                                         Avatar(
-                                            if (mine) photo else null,
-                                            (post.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
+                                            if (d.uid.isNotEmpty() && d.uid == myUid) photo else null,
+                                            (d.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
                                             44.dp,
                                         )
                                     }
                                     Column(modifier = Modifier.weight(1f)) {
-                                        if (post.resignalOf.isNotEmpty()) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    "Resignaled signal by",
-                                                    color = NexoraColors.StarWhite.copy(alpha = 0.6f),
-                                                    fontSize = 13.sp,
-                                                    maxLines = 1,
-                                                )
-                                                Spacer(Modifier.width(6.dp))
-                                                Text(
-                                                    post.resignalFromName.ifBlank { "Explorer" },
-                                                    color = NexoraColors.PlasmaCyan,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f, fill = false),
-                                                )
-                                            }
-                                            Spacer(Modifier.height(2.dp))
-                                        }
-                                        // EDIT 3: name is now tappable
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                post.name.ifBlank { "Explorer" },
-                                                color = NexoraColors.StarWhite,
-                                                fontSize = 17.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier
-                                                    .weight(1f, fill = false)
-                                                    .clickable {
-                                                        if (mine) onOpenProfile()
-                                                        else if (post.authorUid.isNotBlank()) onOpenUserProfile(post.authorUid)
-                                                    },
-                                            )
-                                            if (isFounder(post.authorUid)) {
-                                                Spacer(Modifier.width(6.dp))
-                                                FounderBadge(size = 18.dp)
-                                            }
-                                        }
-                                        Text(
-                                            (if (post.handle.isNotBlank()) "X.${post.handle} · " else "") + ago(post.time),
-                                            color = NexoraColors.StarWhite.copy(alpha = 0.6f),
-                                            fontSize = 13.sp,
-                                        )
-                                        Spacer(Modifier.height(6.dp))
-                                        Text(
-                                            post.text,
-                                            color = NexoraColors.StarWhite,
-                                            fontSize = 16.sp,
-                                            lineHeight = 23.sp,
-                                        )
+                                        PostCardText(d) { openAuthor() }
                                         Spacer(Modifier.height(8.dp))
                                         PostActionBar(
                                             liked = liked,
@@ -663,16 +651,16 @@ fun OrbitScreen(
                                                 )
                                             },
                                             onResignal = {
-                                                db.collection("posts").document(post.id).update(
-                                                    "resignals",
-                                                    if (resignaled) FieldValue.arrayRemove(myUid)
-                                                    else FieldValue.arrayUnion(myUid),
-                                                )
+                                                if (resignaled) {
+                                                    undoResignal(db, myUid, d.baseId)
+                                                } else {
+                                                    sendResignal(db, myUid, name, handle, source, "")
+                                                }
                                             },
                                             onShare = {
                                                 val send = Intent(Intent.ACTION_SEND).apply {
                                                     type = "text/plain"
-                                                    putExtra(Intent.EXTRA_TEXT, post.text)
+                                                    putExtra(Intent.EXTRA_TEXT, d.body)
                                                 }
                                                 context.startActivity(
                                                     Intent.createChooser(send, "Share")
@@ -683,7 +671,7 @@ fun OrbitScreen(
                                             saved = post.saved.contains(myUid),
                                             visibility = post.visibility,
                                             isOwnPost = mine,
-                                            onQuote = { quoteFor = post },
+                                            onQuote = { quoteSource = source },
                                             onReactWithVideo = {
                                                 Toast.makeText(
                                                     context,
@@ -705,6 +693,10 @@ fun OrbitScreen(
                                             },
                                             onDelete = {
                                                 db.collection("posts").document(post.id).delete()
+                                                if (mine && post.resignalOf.isNotEmpty()) {
+                                                    db.collection("posts").document(post.resignalOf)
+                                                        .update("resignals", FieldValue.arrayRemove(myUid))
+                                                }
                                             },
                                         )
                                     }
@@ -736,32 +728,18 @@ fun OrbitScreen(
 
         commentsFor?.let { CommentsDialog(it, myUid, name) { commentsFor = null } }
 
-        quoteFor?.let { q ->
+        quoteSource?.let { q ->
             SignalDialog(
                 title = "Quote",
                 placeholder = "Add your thoughts...",
                 actionLabel = "Send signal",
                 value = quoteText,
                 onValueChange = { quoteText = it },
-                onDismiss = { quoteFor = null; quoteText = "" },
+                onDismiss = { quoteSource = null; quoteText = "" },
                 allowBlank = true,
                 onSend = {
-                    db.collection("posts").add(
-                        hashMapOf(
-                            "authorUid" to myUid,
-                            "authorName" to name,
-                            "authorHandle" to handle,
-                            "text" to (quoteText.trim() + "\n\n" + q.text).trim(),
-                            "time" to System.currentTimeMillis(),
-                            "likes" to emptyList<String>(),
-                            "resignals" to emptyList<String>(),
-                            "resignalOf" to q.id,
-                            "resignalFromName" to q.name,
-                        )
-                    )
-                    db.collection("posts").document(q.id)
-                        .update("resignals", FieldValue.arrayUnion(myUid))
-                    quoteFor = null
+                    sendResignal(db, myUid, name, handle, q, quoteText)
+                    quoteSource = null
                     quoteText = ""
                 },
             )
