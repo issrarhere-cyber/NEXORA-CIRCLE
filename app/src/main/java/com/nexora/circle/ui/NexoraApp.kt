@@ -40,7 +40,7 @@ import com.nexora.circle.ui.components.NexoraIcon
 import com.nexora.circle.ui.components.NxIcon
 import com.nexora.circle.ui.components.StarfieldBackground
 import com.nexora.circle.ui.screens.CommsScreen
-import com.nexora.circle.ui.screens.MyPostsScreen
+import com.nexora.circle.ui.screens.MyPostsFeedScreen // CHANGED (was MyPostsScreen)
 import com.nexora.circle.ui.screens.NexoraXScreen
 import com.nexora.circle.ui.screens.NotificationsScreen
 import com.nexora.circle.ui.screens.OrbitScreen
@@ -254,7 +254,11 @@ fun NexoraApp() {
                                 },
                             )
                         } else if (meSub == "posts") {
-                            MyPostsScreen(onBack = { meSub = "" })
+                            // CHANGED: Orbit History screen (Orbit-style cards)
+                            MyPostsFeedScreen(
+                                onBack = { meSub = "" },
+                                onOpenUserProfile = { uid -> meUserUid = uid },
+                            )
                         } else if (meSub == "followers") {
                             UserListScreen(
                                 title = "Followers",
