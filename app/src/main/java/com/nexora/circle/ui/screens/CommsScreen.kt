@@ -31,11 +31,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +49,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,6 +69,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -167,6 +172,95 @@ private val EMOJIS: List<String> = (
         "🙄 😬 🤐 😷 🤒 👍 👎 👏 🙌 🙏 💪 👋 🤝 ✌️ 🤞 👌 " +
         "❤️ 🧡 💛 💚 💙 💜 🖤 💔 🔥 ✨ 🎉 💯 👀 🚀 🌙 ⭐ 👽 🛸"
     ).split(" ")
+
+// ---------- Chat options stored on this phone (pin, hide, lock, block, best friend, theme) ----------
+
+private val CHAT_THEMES: List<Pair<String, Color>> = listOf(
+    "cyan" to Color(0xFF00E5FF),
+    "pink" to Color(0xFFFF4DA6),
+    "purple" to Color(0xFFA855F7),
+    "green" to Color(0xFF22C55E),
+    "orange" to Color(0xFFFF9800),
+)
+
+private fun themeColor(key: String): Color = when (key) {
+    "cyan" -> NexoraColors.PlasmaCyan
+    else -> CHAT_THEMES.firstOrNull { it.first == key }?.second ?: NexoraColors.PlasmaCyan
+}
+
+private class ChatPrefs(context: Context) {
+    private val p = context.getSharedPreferences("nexora_chat_prefs", Context.MODE_PRIVATE)
+
+    private fun load(key: String): SnapshotStateList<String> =
+        mutableStateListOf<String>().apply { addAll(p.getStringSet(key, emptySet()) ?: emptySet()) }
+
+    val pinned = load("pinned")
+    val hidden = load("hidden")
+    val locked = load("locked")
+    val blocked = load("blocked")
+    val bff = load("bff")
+
+    fun toggle(list: SnapshotStateList<String>, key: String, id: String) {
+        if (id in list) list.remove(id) else list.add(id)
+        p.edit().putStringSet(key, list.toSet()).apply()
+    }
+
+    fun theme(chatId: String): String = p.getString("theme_$chatId", "cyan") ?: "cyan"
+
+    fun setTheme(chatId: String, key: String) {
+        p.edit().putString("theme_$chatId", key).apply()
+    }
+
+    fun hasPin(): Boolean = !p.getString("pin", null).isNullOrEmpty()
+
+    fun setPin(pin: String) {
+        p.edit().putString("pin", pin.hashCode().toString()).apply()
+    }
+
+    fun checkPin(pin: String): Boolean = p.getString("pin", null) == pin.hashCode().toString()
+}
+
+@Composable
+private fun PinDialog(
+    title: String,
+    confirmLabel: String,
+    onDismiss: () -> Unit,
+    // Return an error message, or null when the PIN was accepted.
+    onSubmit: (String) -> String?,
+) {
+    var pin by remember { mutableStateOf("") }
+    var err by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = {
+                        pin = it.filter { c -> c.isDigit() }.take(6)
+                        err = ""
+                    },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    placeholder = { Text("4-6 digit PIN") },
+                )
+                if (err.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(err, color = NexoraColors.NebulaPink)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val e = onSubmit(pin)
+                if (e != null) err = e
+            }) { Text(confirmLabel) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
 
 // ---------- Icons ----------
 
@@ -296,11 +390,14 @@ fun CommsScreen(
     startUid: String? = null,
     onOpenProfile: (String) -> Unit = {},
 ) {
+    val context = LocalContext.current
     val db = remember { FirebaseFirestore.getInstance() }
     val myUid = remember { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }
+    val prefs = remember { ChatPrefs(context) }
     val friendIds = remember { mutableStateListOf<String>() }
     val names = remember { mutableStateMapOf<String, String>() }
     var selectedId by remember { mutableStateOf(startUid) }
+    var unlockedId by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf("") }
 
     LaunchedEffect(startUid) {
@@ -340,16 +437,38 @@ fun CommsScreen(
         FriendsList(
             myUid = myUid,
             friends = friendIds.map { Friend(it, names[it] ?: "Explorer") },
+            prefs = prefs,
             loadError = loadError,
             onOpen = { selectedId = it.id },
             onSendSignal = onSendSignal,
+        )
+    } else if (current in prefs.locked && prefs.hasPin() && unlockedId != current) {
+        // Locked chat: ask for the PIN before showing anything.
+        Box(Modifier.fillMaxSize())
+        PinDialog(
+            title = "Enter PIN to open this chat",
+            confirmLabel = "Unlock",
+            onDismiss = { selectedId = null },
+            onSubmit = { pin ->
+                if (prefs.checkPin(pin)) {
+                    unlockedId = current
+                    null
+                } else {
+                    "Wrong PIN"
+                }
+            },
         )
     } else {
         ChatView(
             myUid = myUid,
             friend = Friend(current, names[current] ?: "Explorer"),
-            onBack = { selectedId = null },
+            prefs = prefs,
+            onBack = {
+                selectedId = null
+                unlockedId = null
+            },
             onOpenProfile = onOpenProfile,
+            onLockedHere = { unlockedId = current },
         )
     }
 }
@@ -358,17 +477,45 @@ fun CommsScreen(
 private fun FriendsList(
     myUid: String,
     friends: List<Friend>,
+    prefs: ChatPrefs,
     loadError: String,
     onOpen: (Friend) -> Unit,
     onSendSignal: () -> Unit,
 ) {
     val db = remember { FirebaseFirestore.getInstance() }
+    var showHidden by remember { mutableStateOf(false) }
+    var askPin by remember { mutableStateOf(false) }
+
+    val shown = friends
+        .filter { (it.id in prefs.hidden) == showHidden }
+        .sortedByDescending { it.id in prefs.pinned }
+
+    if (askPin) {
+        PinDialog(
+            title = "Enter PIN to see hidden chats",
+            confirmLabel = "Open",
+            onDismiss = { askPin = false },
+            onSubmit = { pin ->
+                if (prefs.checkPin(pin)) {
+                    askPin = false
+                    showHidden = true
+                    null
+                } else {
+                    "Wrong PIN"
+                }
+            },
+        )
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Comms", style = MaterialTheme.typography.headlineMedium, color = NexoraColors.StarWhite)
+        Text(
+            if (showHidden) "Hidden chats" else "Comms",
+            style = MaterialTheme.typography.headlineMedium,
+            color = NexoraColors.StarWhite,
+        )
 
         if (loadError.isNotEmpty()) {
             Text(loadError, color = NexoraColors.NebulaPink)
@@ -391,7 +538,19 @@ private fun FriendsList(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(friends, key = { it.id }) { f ->
+                if (showHidden) {
+                    item {
+                        Text(
+                            "← Back to chats",
+                            color = NexoraColors.PlasmaCyan,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clickable { showHidden = false }
+                                .padding(vertical = 8.dp),
+                        )
+                    }
+                }
+                items(shown, key = { it.id }) { f ->
                     var last by remember(f.id) { mutableStateOf<ChatMessage?>(null) }
                     DisposableEffect(f.id) {
                         val reg = db.collection("chats").document(chatIdOf(myUid, f.id))
@@ -411,6 +570,9 @@ private fun FriendsList(
                             }
                         onDispose { reg.remove() }
                     }
+
+                    val isLocked = f.id in prefs.locked
+                    val isBlocked = f.id in prefs.blocked
 
                     Row(
                         modifier = Modifier
@@ -435,17 +597,46 @@ private fun FriendsList(
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(f.name, color = NexoraColors.StarWhite, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    f.name,
+                                    color = NexoraColors.StarWhite,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                if (f.id in prefs.bff) Text(" 💛")
+                                if (f.id in prefs.pinned) Text(" 📌")
+                                if (isLocked) Text(" 🔒")
+                            }
                             Text(
-                                last?.text ?: "Tap to start chatting",
+                                when {
+                                    isBlocked -> "Blocked"
+                                    isLocked -> "Locked chat"
+                                    else -> last?.text ?: "Tap to start chatting"
+                                },
                                 color = NexoraColors.Muted,
                                 maxLines = 1,
                             )
                         }
                         val t = formatTime(last?.time ?: 0L)
-                        if (t.isNotEmpty()) {
+                        if (t.isNotEmpty() && !isLocked) {
                             Text(t, style = MaterialTheme.typography.labelSmall, color = NexoraColors.Muted)
                         }
+                    }
+                }
+                if (!showHidden && prefs.hidden.isNotEmpty()) {
+                    item {
+                        Text(
+                            "Hidden chats (${prefs.hidden.size})",
+                            color = NexoraColors.Muted,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (prefs.hasPin()) askPin = true else showHidden = true
+                                }
+                                .padding(vertical = 12.dp),
+                        )
                     }
                 }
             }
@@ -457,8 +648,10 @@ private fun FriendsList(
 private fun ChatView(
     myUid: String,
     friend: Friend,
+    prefs: ChatPrefs,
     onBack: () -> Unit,
     onOpenProfile: (String) -> Unit,
+    onLockedHere: () -> Unit,
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -469,11 +662,17 @@ private fun ChatView(
     var errorMsg by remember { mutableStateOf("") }
     var showEmoji by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
+    var showTheme by remember { mutableStateOf(false) }
+    var showBlock by remember { mutableStateOf(false) }
+    var showSetPin by remember { mutableStateOf(false) }
     var selectedMsg by remember { mutableStateOf<ChatMessage?>(null) }
+    var themeKey by remember(chatId) { mutableStateOf(prefs.theme(chatId)) }
+    val accent = themeColor(themeKey)
+    val isBlocked = friend.id in prefs.blocked
     val listState = rememberLazyListState()
 
     // Messages I removed "for me" (kept on this phone only).
-    val hidden = remember(chatId) {
+    val hiddenMsgs = remember(chatId) {
         mutableStateListOf<String>().apply {
             addAll(
                 context.getSharedPreferences("nexora_hidden", Context.MODE_PRIVATE)
@@ -484,17 +683,19 @@ private fun ChatView(
 
     fun saveHidden() {
         context.getSharedPreferences("nexora_hidden", Context.MODE_PRIVATE)
-            .edit().putStringSet("h_$chatId", hidden.toSet()).apply()
+            .edit().putStringSet("h_$chatId", hiddenMsgs.toSet()).apply()
     }
 
     fun hideMessage(id: String) {
-        if (id !in hidden) {
-            hidden.add(id)
+        if (id !in hiddenMsgs) {
+            hiddenMsgs.add(id)
             saveHidden()
         }
     }
 
-    val visible = messages.filter { it.id !in hidden }
+    val visible = messages.filter {
+        it.id !in hiddenMsgs && !(isBlocked && it.senderUid == friend.id)
+    }
 
     // Keyboard height. Changes while the keyboard opens/closes.
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
@@ -514,7 +715,7 @@ private fun ChatView(
                     val newest = fresh.lastOrNull()
                     // Sound only for a NEW message from the friend (not on first load, not for my own).
                     if (!firstLoad && newest != null && newest.senderUid != myUid &&
-                        fresh.size > messages.size
+                        friend.id !in prefs.blocked && fresh.size > messages.size
                     ) {
                         playMessageTone(context)
                     }
@@ -548,6 +749,7 @@ private fun ChatView(
     fun send() {
         val text = input.trim()
         if (text.isEmpty()) return
+        if (isBlocked) return
         if (myUid.isEmpty()) {
             errorMsg = "You are not signed in."
             return
@@ -570,7 +772,8 @@ private fun ChatView(
         }
     }
 
-    // Long-press a message -> delete dialog.
+    // ----- Dialogs -----
+
     selectedMsg?.let { m ->
         val mine = m.senderUid == myUid
         AlertDialog(
@@ -601,9 +804,76 @@ private fun ChatView(
         )
     }
 
+    if (showTheme) {
+        AlertDialog(
+            onDismissRequest = { showTheme = false },
+            title = { Text("Chat theme") },
+            text = {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CHAT_THEMES.forEach { (key, color) ->
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .clickable {
+                                    themeKey = key
+                                    prefs.setTheme(chatId, key)
+                                    showTheme = false
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (themeKey == key) {
+                                Text("✓", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showTheme = false }) { Text("Close") } },
+        )
+    }
+
+    if (showBlock) {
+        AlertDialog(
+            onDismissRequest = { showBlock = false },
+            title = { Text("Block ${friend.name}?") },
+            text = {
+                Text("You will not see their messages and you cannot send them any. This works on your phone only.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBlock = false
+                    prefs.toggle(prefs.blocked, "blocked", friend.id)
+                }) { Text("Block") }
+            },
+            dismissButton = { TextButton(onClick = { showBlock = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (showSetPin) {
+        PinDialog(
+            title = "Set a PIN to lock chats",
+            confirmLabel = "Set PIN",
+            onDismiss = { showSetPin = false },
+            onSubmit = { pin ->
+                if (pin.length < 4) {
+                    "Use at least 4 digits"
+                } else {
+                    prefs.setPin(pin)
+                    prefs.toggle(prefs.locked, "locked", friend.id)
+                    onLockedHere()
+                    showSetPin = false
+                    null
+                }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(accent.copy(alpha = 0.05f))
             .imePadding()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -626,7 +896,7 @@ private fun ChatView(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(NexoraColors.PlasmaCyan),
+                        .background(accent),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -652,10 +922,67 @@ private fun ChatView(
                 )
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(
+                        text = { Text(if (friend.id in prefs.pinned) "Unpin chat" else "Pin chat") },
+                        onClick = {
+                            menuOpen = false
+                            prefs.toggle(prefs.pinned, "pinned", friend.id)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(if (friend.id in prefs.bff) "Remove best friend 💛" else "Best friend 💛")
+                        },
+                        onClick = {
+                            menuOpen = false
+                            prefs.toggle(prefs.bff, "bff", friend.id)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Chat theme") },
+                        onClick = {
+                            menuOpen = false
+                            showTheme = true
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (friend.id in prefs.locked) "Unlock chat" else "Lock chat") },
+                        onClick = {
+                            menuOpen = false
+                            if (friend.id in prefs.locked) {
+                                prefs.toggle(prefs.locked, "locked", friend.id)
+                            } else if (!prefs.hasPin()) {
+                                showSetPin = true
+                            } else {
+                                prefs.toggle(prefs.locked, "locked", friend.id)
+                                onLockedHere()
+                            }
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (friend.id in prefs.hidden) "Unhide chat" else "Hide chat") },
+                        onClick = {
+                            menuOpen = false
+                            val wasHidden = friend.id in prefs.hidden
+                            prefs.toggle(prefs.hidden, "hidden", friend.id)
+                            if (!wasHidden) onBack()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (isBlocked) "Unblock" else "Block") },
+                        onClick = {
+                            menuOpen = false
+                            if (isBlocked) {
+                                prefs.toggle(prefs.blocked, "blocked", friend.id)
+                            } else {
+                                showBlock = true
+                            }
+                        },
+                    )
+                    DropdownMenuItem(
                         text = { Text("Clear chat (for me)") },
                         onClick = {
                             menuOpen = false
-                            messages.forEach { if (it.id !in hidden) hidden.add(it.id) }
+                            messages.forEach { if (it.id !in hiddenMsgs) hiddenMsgs.add(it.id) }
                             saveHidden()
                         },
                     )
@@ -684,8 +1011,7 @@ private fun ChatView(
                                 detectTapGestures(onLongPress = { selectedMsg = msg })
                             }
                             .background(
-                                if (mine) NexoraColors.PlasmaCyan.copy(alpha = 0.18f)
-                                else NexoraColors.Panel,
+                                if (mine) accent.copy(alpha = 0.22f) else NexoraColors.Panel,
                                 RoundedCornerShape(16.dp),
                             )
                             .padding(12.dp),
@@ -694,7 +1020,7 @@ private fun ChatView(
                             Text(
                                 msg.senderName,
                                 style = MaterialTheme.typography.labelMedium,
-                                color = NexoraColors.PlasmaCyan,
+                                color = accent,
                             )
                         }
                         Text(msg.text, color = NexoraColors.StarWhite)
@@ -717,108 +1043,113 @@ private fun ChatView(
             Text(errorMsg, color = NexoraColors.NebulaPink)
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        if (isBlocked) {
+            Text(
+                "You blocked ${friend.name}. Open the ⋮ menu and tap Unblock to chat again.",
+                color = NexoraColors.Muted,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            )
+        } else {
             Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .background(NexoraColors.Panel, RoundedCornerShape(28.dp))
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Box(
-                    Modifier.clickable {
-                        showEmoji = !showEmoji
-                        if (showEmoji) focusManager.clearFocus()
-                    }
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(NexoraColors.Panel, RoundedCornerShape(28.dp))
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    BarIcon(
-                        BarKind.Emoji,
-                        if (showEmoji) NexoraColors.PlasmaCyan else NexoraColors.Muted,
-                    )
-                }
+                    Box(
+                        Modifier.clickable {
+                            showEmoji = !showEmoji
+                            if (showEmoji) focusManager.clearFocus()
+                        }
+                    ) {
+                        BarIcon(BarKind.Emoji, if (showEmoji) accent else NexoraColors.Muted)
+                    }
 
-                Box(Modifier.weight(1f)) {
-                    if (input.isEmpty()) {
-                        Text(
-                            "Message",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = NexoraColors.Muted,
+                    Box(Modifier.weight(1f)) {
+                        if (input.isEmpty()) {
+                            Text(
+                                "Message",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = NexoraColors.Muted,
+                            )
+                        }
+                        BasicTextField(
+                            value = input,
+                            onValueChange = { input = it.take(500) },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = NexoraColors.StarWhite),
+                            cursorBrush = SolidColor(accent),
+                            maxLines = 4,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged { if (it.isFocused) showEmoji = false },
                         )
                     }
-                    BasicTextField(
-                        value = input,
-                        onValueChange = { input = it.take(500) },
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = NexoraColors.StarWhite),
-                        cursorBrush = SolidColor(NexoraColors.PlasmaCyan),
-                        maxLines = 4,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onFocusChanged { if (it.isFocused) showEmoji = false },
-                    )
+
+                    Box(Modifier.clickable { toast(context) }) {
+                        BarIcon(BarKind.Attach, NexoraColors.Muted)
+                    }
+                    if (input.isBlank()) {
+                        Box(Modifier.clickable { toast(context) }) {
+                            BarIcon(BarKind.Camera, NexoraColors.Muted)
+                        }
+                    }
                 }
 
-                Box(Modifier.clickable { toast(context) }) {
-                    BarIcon(BarKind.Attach, NexoraColors.Muted)
-                }
-                if (input.isBlank()) {
-                    Box(Modifier.clickable { toast(context) }) {
-                        BarIcon(BarKind.Camera, NexoraColors.Muted)
+                if (input.isNotBlank()) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_send_pink),
+                        contentDescription = "Send",
+                        modifier = Modifier
+                            .width(62.dp)
+                            .height(42.dp)
+                            .clickable { send() },
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(accent)
+                            .clickable { toast(context) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        BarIcon(BarKind.Mic, NexoraColors.SpaceBlack, 26.dp)
                     }
                 }
             }
 
-            if (input.isNotBlank()) {
-                Image(
-                    painter = painterResource(R.drawable.ic_send_pink),
-                    contentDescription = "Send",
+            // ----- Emoji panel (opens under the message box) -----
+            if (showEmoji) {
+                Column(
                     modifier = Modifier
-                        .width(62.dp)
-                        .height(42.dp)
-                        .clickable { send() },
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .background(NexoraColors.PlasmaCyan)
-                        .clickable { toast(context) },
-                    contentAlignment = Alignment.Center,
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .background(NexoraColors.Panel, RoundedCornerShape(16.dp))
+                        .verticalScroll(rememberScrollState())
+                        .padding(8.dp),
                 ) {
-                    BarIcon(BarKind.Mic, NexoraColors.SpaceBlack, 26.dp)
-                }
-            }
-        }
-
-        // ----- Emoji panel (opens under the message box) -----
-        if (showEmoji) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(220.dp)
-                    .background(NexoraColors.Panel, RoundedCornerShape(16.dp))
-                    .verticalScroll(rememberScrollState())
-                    .padding(8.dp),
-            ) {
-                EMOJIS.chunked(8).forEach { rowEmojis ->
-                    Row(Modifier.fillMaxWidth()) {
-                        rowEmojis.forEach { e ->
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { input = (input + e).take(500) }
-                                    .padding(6.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(e, fontSize = 26.sp)
+                    EMOJIS.chunked(8).forEach { rowEmojis ->
+                        Row(Modifier.fillMaxWidth()) {
+                            rowEmojis.forEach { e ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { input = (input + e).take(500) }
+                                        .padding(6.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(e, fontSize = 26.sp)
+                                }
                             }
+                            repeat(8 - rowEmojis.size) { Spacer(Modifier.weight(1f)) }
                         }
-                        repeat(8 - rowEmojis.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
