@@ -64,8 +64,8 @@ fun CommentsDialog(
     postId: String,
     myUid: String,
     myName: String,
-    onDismiss: () -> Unit,
     onOpenProfile: (String) -> Unit = {},
+    onDismiss: () -> Unit,
 ) {
     val db = remember { FirebaseFirestore.getInstance() }
     val comments = remember { mutableStateListOf<CommentItem>() }
