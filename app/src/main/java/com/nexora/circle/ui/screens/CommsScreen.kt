@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,11 +27,17 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -52,12 +60,15 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.MetadataChanges
@@ -149,6 +160,13 @@ private fun playSendTone(context: Context) {
         // Sound is optional; never crash the chat because of it.
     }
 }
+
+private val EMOJIS: List<String> = (
+    "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 😉 😍 🥰 😘 😋 " +
+        "😎 🤩 🥳 😏 😒 😞 😔 😢 😭 😤 😡 🤯 😱 😴 🤔 🤗 " +
+        "🙄 😬 🤐 😷 🤒 👍 👎 👏 🙌 🙏 💪 👋 🤝 ✌️ 🤞 👌 " +
+        "❤️ 🧡 💛 💚 💙 💜 🖤 💔 🔥 ✨ 🎉 💯 👀 🚀 🌙 ⭐ 👽 🛸"
+    ).split(" ")
 
 // ---------- Icons ----------
 
@@ -276,6 +294,7 @@ private fun StatusTicks(status: MsgStatus) {
 fun CommsScreen(
     onSendSignal: () -> Unit = {},
     startUid: String? = null,
+    onOpenProfile: (String) -> Unit = {},
 ) {
     val db = remember { FirebaseFirestore.getInstance() }
     val myUid = remember { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }
@@ -330,6 +349,7 @@ fun CommsScreen(
             myUid = myUid,
             friend = Friend(current, names[current] ?: "Explorer"),
             onBack = { selectedId = null },
+            onOpenProfile = onOpenProfile,
         )
     }
 }
@@ -434,14 +454,47 @@ private fun FriendsList(
 }
 
 @Composable
-private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
+private fun ChatView(
+    myUid: String,
+    friend: Friend,
+    onBack: () -> Unit,
+    onOpenProfile: (String) -> Unit,
+) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val db = remember { FirebaseFirestore.getInstance() }
     val chatId = remember(friend.id) { chatIdOf(myUid, friend.id) }
     val messages = remember(chatId) { mutableStateListOf<ChatMessage>() }
     var input by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
+    var showEmoji by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var selectedMsg by remember { mutableStateOf<ChatMessage?>(null) }
     val listState = rememberLazyListState()
+
+    // Messages I removed "for me" (kept on this phone only).
+    val hidden = remember(chatId) {
+        mutableStateListOf<String>().apply {
+            addAll(
+                context.getSharedPreferences("nexora_hidden", Context.MODE_PRIVATE)
+                    .getStringSet("h_$chatId", emptySet()) ?: emptySet()
+            )
+        }
+    }
+
+    fun saveHidden() {
+        context.getSharedPreferences("nexora_hidden", Context.MODE_PRIVATE)
+            .edit().putStringSet("h_$chatId", hidden.toSet()).apply()
+    }
+
+    fun hideMessage(id: String) {
+        if (id !in hidden) {
+            hidden.add(id)
+            saveHidden()
+        }
+    }
+
+    val visible = messages.filter { it.id !in hidden }
 
     // Keyboard height. Changes while the keyboard opens/closes.
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
@@ -483,13 +536,13 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
     }
 
     // New message -> scroll to the bottom.
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+    LaunchedEffect(visible.size) {
+        if (visible.isNotEmpty()) listState.animateScrollToItem(visible.size - 1)
     }
 
     // Keyboard opens/closes -> stay on the last message so it is not hidden.
     LaunchedEffect(imeBottom) {
-        if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
+        if (visible.isNotEmpty()) listState.scrollToItem(visible.size - 1)
     }
 
     fun send() {
@@ -517,6 +570,37 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
         }
     }
 
+    // Long-press a message -> delete dialog.
+    selectedMsg?.let { m ->
+        val mine = m.senderUid == myUid
+        AlertDialog(
+            onDismissRequest = { selectedMsg = null },
+            title = { Text("Delete message?") },
+            text = {
+                Text(
+                    if (mine) "This will delete the message for everyone."
+                    else "This will remove the message from your phone only."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    selectedMsg = null
+                    if (mine) {
+                        db.collection("chats").document(chatId).collection("messages")
+                            .document(m.id).delete()
+                            .addOnFailureListener { e ->
+                                hideMessage(m.id)
+                                errorMsg = "Could not delete for everyone (${e.localizedMessage}). Hidden on your phone."
+                            }
+                    } else {
+                        hideMessage(m.id)
+                    }
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { selectedMsg = null }) { Text("Cancel") } },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -524,14 +608,59 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // ----- Top bar: back, profile pic + name (tap = open profile), menu -----
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "←",
                 style = MaterialTheme.typography.headlineMedium,
                 color = NexoraColors.StarWhite,
-                modifier = Modifier.clickable { onBack() }.padding(end = 16.dp),
+                modifier = Modifier.clickable { onBack() }.padding(end = 12.dp),
             )
-            Text(friend.name, style = MaterialTheme.typography.headlineSmall, color = NexoraColors.StarWhite)
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onOpenProfile(friend.id) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(NexoraColors.PlasmaCyan),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        friend.name.take(1).uppercase(),
+                        color = NexoraColors.SpaceBlack,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    friend.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = NexoraColors.StarWhite,
+                    maxLines = 1,
+                )
+            }
+            Box {
+                Text(
+                    "⋮",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = NexoraColors.StarWhite,
+                    modifier = Modifier.clickable { menuOpen = true }.padding(horizontal = 8.dp),
+                )
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Clear chat (for me)") },
+                        onClick = {
+                            menuOpen = false
+                            messages.forEach { if (it.id !in hidden) hidden.add(it.id) }
+                            saveHidden()
+                        },
+                    )
+                }
+            }
         }
 
         LazyColumn(
@@ -539,10 +668,10 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (messages.isEmpty()) {
+            if (visible.isEmpty()) {
                 item { Text("Say hi to ${friend.name} 👋", color = NexoraColors.Muted) }
             }
-            items(messages, key = { it.id }) { msg ->
+            items(visible, key = { it.id }) { msg ->
                 val mine = msg.senderUid == myUid
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -551,6 +680,9 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
                     Column(
                         modifier = Modifier
                             .widthIn(max = 280.dp)
+                            .pointerInput(msg.id) {
+                                detectTapGestures(onLongPress = { selectedMsg = msg })
+                            }
                             .background(
                                 if (mine) NexoraColors.PlasmaCyan.copy(alpha = 0.18f)
                                 else NexoraColors.Panel,
@@ -598,8 +730,16 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Box(Modifier.clickable { toast(context, "Use your keyboard's emoji key") }) {
-                    BarIcon(BarKind.Emoji, NexoraColors.Muted)
+                Box(
+                    Modifier.clickable {
+                        showEmoji = !showEmoji
+                        if (showEmoji) focusManager.clearFocus()
+                    }
+                ) {
+                    BarIcon(
+                        BarKind.Emoji,
+                        if (showEmoji) NexoraColors.PlasmaCyan else NexoraColors.Muted,
+                    )
                 }
 
                 Box(Modifier.weight(1f)) {
@@ -616,7 +756,9 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = NexoraColors.StarWhite),
                         cursorBrush = SolidColor(NexoraColors.PlasmaCyan),
                         maxLines = 4,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { if (it.isFocused) showEmoji = false },
                     )
                 }
 
@@ -649,6 +791,35 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
                     contentAlignment = Alignment.Center,
                 ) {
                     BarIcon(BarKind.Mic, NexoraColors.SpaceBlack, 26.dp)
+                }
+            }
+        }
+
+        // ----- Emoji panel (opens under the message box) -----
+        if (showEmoji) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp)
+                    .background(NexoraColors.Panel, RoundedCornerShape(16.dp))
+                    .verticalScroll(rememberScrollState())
+                    .padding(8.dp),
+            ) {
+                EMOJIS.chunked(8).forEach { rowEmojis ->
+                    Row(Modifier.fillMaxWidth()) {
+                        rowEmojis.forEach { e ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { input = (input + e).take(500) }
+                                    .padding(6.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(e, fontSize = 26.sp)
+                            }
+                        }
+                        repeat(8 - rowEmojis.size) { Spacer(Modifier.weight(1f)) }
+                    }
                 }
             }
         }
