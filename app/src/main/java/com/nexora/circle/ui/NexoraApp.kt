@@ -47,6 +47,7 @@ import com.nexora.circle.ui.screens.OrbitScreen
 import com.nexora.circle.ui.screens.PlaceholderScreen
 import com.nexora.circle.ui.screens.ProfileDestination
 import com.nexora.circle.ui.screens.ProfileScreen
+import com.nexora.circle.ui.screens.ProfileSubScreen
 import com.nexora.circle.ui.screens.SearchScreen
 import com.nexora.circle.ui.screens.SignalScreen
 import com.nexora.circle.ui.screens.UserListScreen
@@ -121,7 +122,7 @@ fun NexoraApp() {
     var showNotifications by rememberSaveable { mutableStateOf(false) }
     var profileUid by rememberSaveable { mutableStateOf("") }
     var beamUid by rememberSaveable { mutableStateOf("") }
-    // Me tab sub-screens: "" = none, or "posts" / "followers" / "following"
+    // Me tab sub-screens: "" = none, or "posts" / "followers" / "following" / "x:<label>"
     var meSub by rememberSaveable { mutableStateOf("") }
     var meUserUid by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
@@ -275,6 +276,11 @@ fun NexoraApp() {
                                 onBack = { meSub = "" },
                                 onUserClick = { uid -> meUserUid = uid },
                             )
+                        } else if (meSub.startsWith("x:")) {
+                            ProfileSubScreen(
+                                label = meSub.removePrefix("x:"),
+                                onBack = { meSub = "" },
+                            )
                         } else {
                             ProfileScreen(
                                 onOpen = { dest ->
@@ -282,11 +288,7 @@ fun NexoraApp() {
                                         ProfileDestination.Posts -> meSub = "posts"
                                         ProfileDestination.Followers -> meSub = "followers"
                                         ProfileDestination.Following -> meSub = "following"
-                                        else -> Toast.makeText(
-                                            context,
-                                            "${dest.label} screen is not connected yet",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
+                                        else -> meSub = "x:${dest.label}"
                                     }
                                 },
                             )
