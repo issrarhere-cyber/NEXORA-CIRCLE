@@ -4,8 +4,10 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-// Loads the Nexora-X tables from the JSON files in the assets folder nexora_x.
-// The language lives only in those files; no symbol is hard-coded here.
+/**
+ * Loads the Nexora-X tables from assets/nexora_x/*.json.
+ * The language lives only in those files; no symbol is hard-coded here.
+ */
 object NexoraXRepository {
 
     private const val ALPHABET_FILE = "nexora_x/alphabet.json"

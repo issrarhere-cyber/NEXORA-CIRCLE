@@ -6,30 +6,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 object NexoraColors {
-    val SpaceBlack = Color(0xFF000000)
-    val DeepNavy = Color(0xFF0A0A0A)
-    val Panel = Color(0xFF121212)
-    val NebulaViolet = Color(0xFFB0B0B8)
-    val NebulaPink = Color(0xFFFF4FB0)
-    val PlasmaCyan = Color(0xFF00F0FF)
-    val StarWhite = Color(0xFFFFFFFF)
-    val Muted = Color(0xFFFFFFFF)
-    val Divider = Color(0xFF2A2A2A)
+    val SpaceBlack = Color(0xFF05060F)
+    val DeepNavy = Color(0xFF0B0D24)
+    val Panel = Color(0xCC12163A)
+    val NebulaViolet = Color(0xFF7C5CFF)
+    val NebulaPink = Color(0xFFFF5CA8)
+    val PlasmaCyan = Color(0xFF2DE2E6)
+    val StarWhite = Color(0xFFEAF0FF)
+    val Muted = Color(0xFF8E96C7)
 }
 
 private val NexoraDarkScheme = darkColorScheme(
-    primary = NexoraColors.PlasmaCyan,
-    secondary = NexoraColors.NebulaViolet,
+    primary = NexoraColors.NebulaViolet,
+    secondary = NexoraColors.PlasmaCyan,
     tertiary = NexoraColors.NebulaPink,
     background = NexoraColors.SpaceBlack,
     surface = NexoraColors.DeepNavy,
-    onPrimary = NexoraColors.SpaceBlack,
+    onPrimary = Color.White,
     onSecondary = NexoraColors.SpaceBlack,
-    onTertiary = NexoraColors.SpaceBlack,
     onBackground = NexoraColors.StarWhite,
     onSurface = NexoraColors.StarWhite,
-    onSurfaceVariant = NexoraColors.StarWhite,
-    outline = NexoraColors.Divider,
 )
 
 @Composable
