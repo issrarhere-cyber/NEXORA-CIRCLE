@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Query
 import com.nexora.circle.R
 import com.nexora.circle.ui.theme.NexoraColors
@@ -128,6 +129,22 @@ private fun playMessageTone(context: Context) {
         }
         val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         RingtoneManager.getRingtone(context, uri)?.play()
+    } catch (e: Exception) {
+        // Sound is optional; never crash the chat because of it.
+    }
+}
+
+// Plays res/raw/send_tone.* when I send a message. If the file is not added, stays silent.
+private fun playSendTone(context: Context) {
+    try {
+        val resId = context.resources.getIdentifier("send_tone", "raw", context.packageName)
+        if (resId != 0) {
+            val mp = MediaPlayer.create(context, resId)
+            if (mp != null) {
+                mp.setOnCompletionListener { it.release() }
+                mp.start()
+            }
+        }
     } catch (e: Exception) {
         // Sound is optional; never crash the chat because of it.
     }
@@ -203,7 +220,7 @@ private fun BarIcon(kind: BarKind, tint: Color, iconSize: Dp = 24.dp) {
     }
 }
 
-// ---------- Message status (sent / delivered / seen) ----------
+// ---------- Message status (clock / sent / delivered / seen) ----------
 
 private enum class MsgStatus { Pending, Sent, Delivered, Seen }
 
@@ -218,7 +235,6 @@ private fun statusOf(m: ChatMessage): MsgStatus = when {
 private fun StatusTicks(status: MsgStatus) {
     val color = when (status) {
         MsgStatus.Seen -> NexoraColors.NebulaPink
-        MsgStatus.Pending -> NexoraColors.Muted.copy(alpha = 0.5f)
         else -> NexoraColors.Muted
     }
     val double = status == MsgStatus.Delivered || status == MsgStatus.Seen
@@ -226,6 +242,17 @@ private fun StatusTicks(status: MsgStatus) {
         val w = size.width
         val h = size.height
         val stroke = Stroke(width = h * 0.16f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+        // Pending: small clock icon
+        if (status == MsgStatus.Pending) {
+            val c = Offset(w * 0.5f, h * 0.5f)
+            val r = h * 0.45f
+            drawCircle(color, radius = r, center = c, style = stroke)
+            drawLine(color, c, Offset(c.x, c.y - r * 0.6f), h * 0.14f, StrokeCap.Round)
+            drawLine(color, c, Offset(c.x + r * 0.5f, c.y), h * 0.14f, StrokeCap.Round)
+            return@Canvas
+        }
+
         fun tick(dx: Float) {
             val p = Path().apply {
                 moveTo(dx, 0.55f * h)
@@ -423,7 +450,8 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
         var firstLoad = true
         val reg = db.collection("chats").document(chatId).collection("messages")
             .orderBy("time", Query.Direction.ASCENDING)
-            .addSnapshotListener { snap, err ->
+            // INCLUDE metadata changes so the clock icon turns into a tick once the server confirms.
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snap, err ->
                 if (err != null) {
                     errorMsg = "Load failed: ${err.localizedMessage}"
                     return@addSnapshotListener
@@ -473,6 +501,7 @@ private fun ChatView(myUid: String, friend: Friend, onBack: () -> Unit) {
         }
         errorMsg = ""
         input = ""
+        playSendTone(context)
         db.collection("chats").document(chatId).collection("messages").add(
             hashMapOf(
                 "senderUid" to myUid,
