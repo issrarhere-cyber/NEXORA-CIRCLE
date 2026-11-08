@@ -1,0 +1,27 @@
+name: Apply drawer update (new branch)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Unpack the zip onto a NEW branch (main is not touched)
+        run: |
+          test -f NEXORA-drawer-update.zip || { echo "Upload NEXORA-drawer-update.zip to the repo root first"; exit 1; }
+          git config user.name "nexora-bot"
+          git config user.email "nexora-bot@users.noreply.github.com"
+          git checkout -b drawer-update
+          unzip -o NEXORA-drawer-update.zip
+          git rm -q --cached NEXORA-drawer-update.zip || true
+          rm -f NEXORA-drawer-update.zip
+          git add -A
+          git commit -m "Add left drawer menu (Nexus, Library, Learn Skills, Theme, Anonymous Mode, Settings, Help)"
+          git push origin drawer-update --force
