@@ -38,10 +38,10 @@ private fun SimpleScreen(title: String, message: String, onBack: () -> Unit) {
 
 @Composable
 fun SignalScreen(onBack: () -> Unit) {
-    SimpleScreen("Signal", "Friend requests yahan aayengi", onBack)
+    SimpleScreen("Signal", "Friend requests will appear here", onBack)
 }
 
 @Composable
 fun NotificationsScreen(onBack: () -> Unit) {
-    SimpleScreen("Notifications", "Abhi koi notification nahi", onBack)
+    SimpleScreen("Notifications", "No notifications yet", onBack)
 }
