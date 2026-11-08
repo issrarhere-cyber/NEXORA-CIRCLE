@@ -40,8 +40,12 @@ import kotlinx.coroutines.tasks.await
 private val Cyan = Color(0xFF00F0FF)
 private val Bg = Color(0xFF0B0B1E)
 
-// Set to false if you want users to log in without verifying their email.
+// Set to false to turn email verification off completely.
 private const val REQUIRE_EMAIL_VERIFICATION = true
+
+// Accounts created before this moment (Nov 8, 2026) can log in without verifying.
+// Only accounts created after it must verify their email.
+private const val VERIFY_NEW_ACCOUNTS_FROM_MS = 1794138000000L
 
 @Composable
 fun AuthScreen(onSignedIn: () -> Unit) {
@@ -171,7 +175,10 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                         if (isLogin) {
                             auth.signInWithEmailAndPassword(email.trim(), password).await()
                             val user = auth.currentUser
-                            if (REQUIRE_EMAIL_VERIFICATION && user != null && !user.isEmailVerified) {
+                            val createdAt = user?.metadata?.creationTimestamp ?: 0L
+                            val mustVerify = REQUIRE_EMAIL_VERIFICATION &&
+                                createdAt > VERIFY_NEW_ACCOUNTS_FROM_MS
+                            if (mustVerify && user != null && !user.isEmailVerified) {
                                 runCatching { user.sendEmailVerification().await() }
                                 auth.signOut()
                                 error = "Your email is not verified yet. We sent a new verification link to ${email.trim()}. Verify it, then log in."
