@@ -33,11 +33,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
+import com.nexora.circle.security.AccountSecurity
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 private val Cyan = Color(0xFF00F0FF)
 private val Bg = Color(0xFF0B0B1E)
+
+// Set to false if you want users to log in without verifying their email.
+private const val REQUIRE_EMAIL_VERIFICATION = true
 
 @Composable
 fun AuthScreen(onSignedIn: () -> Unit) {
@@ -47,6 +51,7 @@ fun AuthScreen(onSignedIn: () -> Unit) {
     var password by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    var info by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
@@ -117,17 +122,46 @@ fun AuthScreen(onSignedIn: () -> Unit) {
             modifier = Modifier.fillMaxWidth()
         )
 
+        if (isLogin) {
+            TextButton(
+                onClick = {
+                    error = ""
+                    info = ""
+                    if (email.isBlank()) {
+                        error = "Enter your email first, then tap Forgot password."
+                        return@TextButton
+                    }
+                    loading = true
+                    scope.launch {
+                        // Same message either way, so nobody can check which emails have accounts.
+                        AccountSecurity.sendPasswordReset(email)
+                        info = "If an account exists for ${email.trim()}, a password reset link has been sent."
+                        loading = false
+                    }
+                },
+                enabled = !loading,
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text("Forgot password?", color = Cyan, fontSize = 14.sp)
+            }
+        }
+
         if (error.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Text(error, color = Color(0xFFFF6B8A), fontSize = 14.sp)
+        }
+        if (info.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(info, color = Cyan, fontSize = 14.sp)
         }
 
         Spacer(Modifier.height(20.dp))
         Button(
             onClick = {
                 error = ""
+                info = ""
                 if (email.isBlank() || password.length < 6 || (!isLogin && name.isBlank())) {
-                    error = "Sab fields bharo (password kam az kam 6 characters)"
+                    error = "Please fill in all fields (password must be at least 6 characters)."
                     return@Button
                 }
                 loading = true
@@ -136,6 +170,14 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                         val auth = FirebaseAuth.getInstance()
                         if (isLogin) {
                             auth.signInWithEmailAndPassword(email.trim(), password).await()
+                            val user = auth.currentUser
+                            if (REQUIRE_EMAIL_VERIFICATION && user != null && !user.isEmailVerified) {
+                                runCatching { user.sendEmailVerification().await() }
+                                auth.signOut()
+                                error = "Your email is not verified yet. We sent a new verification link to ${email.trim()}. Verify it, then log in."
+                                return@launch
+                            }
+                            onSignedIn()
                         } else {
                             val result = auth
                                 .createUserWithEmailAndPassword(email.trim(), password)
@@ -145,10 +187,18 @@ fun AuthScreen(onSignedIn: () -> Unit) {
                                     .setDisplayName(name.trim())
                                     .build()
                             )?.await()
+                            if (REQUIRE_EMAIL_VERIFICATION) {
+                                runCatching { result.user?.sendEmailVerification()?.await() }
+                                auth.signOut()
+                                isLogin = true
+                                password = ""
+                                info = "Account created! We sent a verification link to ${email.trim()}. Verify it, then log in."
+                            } else {
+                                onSignedIn()
+                            }
                         }
-                        onSignedIn()
                     } catch (e: Exception) {
-                        error = e.localizedMessage ?: "Kuch galat ho gaya"
+                        error = e.localizedMessage ?: "Something went wrong. Please try again."
                     } finally {
                         loading = false
                     }
@@ -170,9 +220,9 @@ fun AuthScreen(onSignedIn: () -> Unit) {
         }
 
         Spacer(Modifier.height(8.dp))
-        TextButton(onClick = { isLogin = !isLogin; error = "" }) {
+        TextButton(onClick = { isLogin = !isLogin; error = ""; info = "" }) {
             Text(
-                if (isLogin) "Account nahi hai? Sign Up" else "Pehle se account hai? Login",
+                if (isLogin) "Don't have an account? Sign Up" else "Already have an account? Login",
                 color = Color(0xFF9A93D0)
             )
         }
