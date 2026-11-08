@@ -36,6 +36,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -56,8 +57,6 @@ import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.nexora.circle.ui.components.FounderBadge
-import com.nexora.circle.ui.components.isFounder
 import com.nexora.circle.ui.theme.NexoraColors
 
 private data class MyPost(
@@ -71,20 +70,25 @@ private data class MyPost(
     val resignals: List<String>,
     val resignalOf: String,
     val resignalFromName: String,
+    val resignalFromUid: String,
+    val resignalFromHandle: String,
+    val resignalFromTime: Long,
+    val quoteText: String,
+    val originalText: String,
     val views: Int,
     val saved: List<String>,
     val visibility: String,
 )
 
-private fun myPostAgo(time: Long): String {
-    val m = (System.currentTimeMillis() - time) / 60000
-    return when {
-        m < 1 -> "now"
-        m < 60 -> "${m}m"
-        m < 1440 -> "${m / 60}h"
-        else -> "${m / 1440}d"
-    }
-}
+/** Original post details, loaded once for re-signal entries. */
+private data class OrigInfo(
+    val uid: String,
+    val name: String,
+    val handle: String,
+    val time: Long,
+    val text: String,
+    val resignals: List<String>,
+)
 
 @Composable
 private fun MyPostAvatar(photo: ImageBitmap?, initial: String, size: Dp) {
@@ -143,9 +147,10 @@ fun MyPostsFeedScreen(
     }
 
     val posts = remember { mutableStateListOf<MyPost>() }
+    val originals = remember { mutableStateMapOf<String, OrigInfo>() }
     var errorMsg by remember { mutableStateOf("") }
     var commentsFor by remember { mutableStateOf<String?>(null) }
-    var quoteFor by remember { mutableStateOf<MyPost?>(null) }
+    var quoteSource by remember { mutableStateOf<ResignalSource?>(null) }
     var quoteText by remember { mutableStateOf("") }
 
     DisposableEffect(targetUid) {
@@ -180,6 +185,11 @@ fun MyPostsFeedScreen(
                                 resignals = resignals,
                                 resignalOf = d.getString("resignalOf") ?: "",
                                 resignalFromName = d.getString("resignalFromName") ?: "",
+                                resignalFromUid = d.getString("resignalFromUid") ?: "",
+                                resignalFromHandle = d.getString("resignalFromHandle") ?: "",
+                                resignalFromTime = d.getLong("resignalFromTime") ?: 0L,
+                                quoteText = d.getString("quoteText") ?: "",
+                                originalText = d.getString("originalText") ?: "",
                                 views = (d.getLong("views") ?: 0L).toInt(),
                                 saved = saved,
                                 visibility = d.getString("visibility") ?: "Public",
@@ -189,6 +199,28 @@ fun MyPostsFeedScreen(
                             .sortedByDescending { it.time }
                         posts.clear()
                         posts.addAll(list)
+
+                        // Load the original post once for every re-signal entry
+                        list.forEach { p ->
+                            if (p.resignalOf.isNotEmpty() && !originals.containsKey(p.resignalOf)) {
+                                db.collection("posts").document(p.resignalOf).get()
+                                    .addOnSuccessListener { od ->
+                                        val t = od.getString("text")
+                                        if (od.exists() && t != null) {
+                                            @Suppress("UNCHECKED_CAST")
+                                            val rs = (od.get("resignals") as? List<String>) ?: emptyList()
+                                            originals[p.resignalOf] = OrigInfo(
+                                                uid = od.getString("authorUid") ?: "",
+                                                name = od.getString("authorName") ?: "",
+                                                handle = od.getString("authorHandle") ?: "",
+                                                time = od.getLong("time") ?: 0L,
+                                                text = t,
+                                                resignals = rs,
+                                            )
+                                        }
+                                    }
+                            }
+                        }
                     }
                 }
             onDispose { reg.remove() }
@@ -257,8 +289,48 @@ fun MyPostsFeedScreen(
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(posts, key = { it.id }) { post ->
                         val mine = post.authorUid == myUid
+                        val found = originals[post.resignalOf]
+                        val d = buildPostDisplay(
+                            id = post.id,
+                            authorUid = post.authorUid,
+                            authorName = post.name,
+                            authorHandle = post.handle,
+                            text = post.text,
+                            time = post.time,
+                            resignalOf = post.resignalOf,
+                            resignalFromUid = post.resignalFromUid,
+                            resignalFromName = post.resignalFromName,
+                            resignalFromHandle = post.resignalFromHandle,
+                            resignalFromTime = post.resignalFromTime,
+                            quoteText = post.quoteText,
+                            originalText = post.originalText,
+                            foundUid = found?.uid.orEmpty(),
+                            foundName = found?.name.orEmpty(),
+                            foundHandle = found?.handle.orEmpty(),
+                            foundTime = found?.time ?: 0L,
+                            foundText = found?.text.orEmpty(),
+                        )
+                        val isRepost = d.repostedBy.isNotEmpty()
                         val liked = post.likes.contains(myUid)
-                        val resignaled = post.resignals.contains(myUid)
+                        val resignaled = if (isRepost) {
+                            mine || found?.resignals?.contains(myUid) == true
+                        } else {
+                            post.resignals.contains(myUid)
+                        }
+                        val source = ResignalSource(
+                            id = d.baseId,
+                            authorUid = d.uid,
+                            name = d.name,
+                            handle = d.handle,
+                            text = d.body,
+                            time = d.time,
+                            visibility = post.visibility,
+                        )
+                        val openAuthor: () -> Unit = {
+                            if (d.uid.isNotBlank() && d.uid != myUid) {
+                                onOpenUserProfile(d.uid)
+                            }
+                        }
 
                         LaunchedEffect(post.id) {
                             if (!mine && myUid.isNotEmpty()) {
@@ -273,66 +345,15 @@ fun MyPostsFeedScreen(
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Box(modifier = Modifier.clickable {
-                                if (!mine && post.authorUid.isNotBlank()) {
-                                    onOpenUserProfile(post.authorUid)
-                                }
-                            }) {
+                            Box(modifier = Modifier.clickable { openAuthor() }) {
                                 MyPostAvatar(
-                                    if (mine) myPhoto else null,
-                                    (post.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
+                                    if (d.uid.isNotEmpty() && d.uid == myUid) myPhoto else null,
+                                    (d.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
                                     44.dp,
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
-                                if (post.resignalOf.isNotEmpty()) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            "Resignaled signal by",
-                                            color = NexoraColors.StarWhite.copy(alpha = 0.6f),
-                                            fontSize = 13.sp,
-                                            maxLines = 1,
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(
-                                            post.resignalFromName.ifBlank { "Explorer" },
-                                            color = NexoraColors.PlasmaCyan,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false),
-                                        )
-                                    }
-                                    Spacer(Modifier.height(2.dp))
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        post.name.ifBlank { "Explorer" },
-                                        color = NexoraColors.StarWhite,
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f, fill = false),
-                                    )
-                                    if (isFounder(post.authorUid)) {
-                                        Spacer(Modifier.width(6.dp))
-                                        FounderBadge(size = 18.dp)
-                                    }
-                                }
-                                Text(
-                                    (if (post.handle.isNotBlank()) "X.${post.handle} · " else "") + myPostAgo(post.time),
-                                    color = NexoraColors.StarWhite.copy(alpha = 0.6f),
-                                    fontSize = 13.sp,
-                                )
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    post.text,
-                                    color = NexoraColors.StarWhite,
-                                    fontSize = 16.sp,
-                                    lineHeight = 23.sp,
-                                )
+                                PostCardText(d) { openAuthor() }
                                 Spacer(Modifier.height(8.dp))
                                 PostActionBar(
                                     liked = liked,
@@ -348,16 +369,16 @@ fun MyPostsFeedScreen(
                                         )
                                     },
                                     onResignal = {
-                                        db.collection("posts").document(post.id).update(
-                                            "resignals",
-                                            if (resignaled) FieldValue.arrayRemove(myUid)
-                                            else FieldValue.arrayUnion(myUid),
-                                        )
+                                        if (resignaled) {
+                                            undoResignal(db, myUid, d.baseId)
+                                        } else {
+                                            sendResignal(db, myUid, myName, myHandle, source, "")
+                                        }
                                     },
                                     onShare = {
                                         val send = Intent(Intent.ACTION_SEND).apply {
                                             type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, post.text)
+                                            putExtra(Intent.EXTRA_TEXT, d.body)
                                         }
                                         context.startActivity(
                                             Intent.createChooser(send, "Share")
@@ -368,7 +389,7 @@ fun MyPostsFeedScreen(
                                     saved = post.saved.contains(myUid),
                                     visibility = post.visibility,
                                     isOwnPost = mine,
-                                    onQuote = { quoteFor = post },
+                                    onQuote = { quoteSource = source },
                                     onReactWithVideo = {
                                         Toast.makeText(
                                             context,
@@ -390,6 +411,10 @@ fun MyPostsFeedScreen(
                                     },
                                     onDelete = {
                                         db.collection("posts").document(post.id).delete()
+                                        if (mine && post.resignalOf.isNotEmpty()) {
+                                            db.collection("posts").document(post.resignalOf)
+                                                .update("resignals", FieldValue.arrayRemove(myUid))
+                                        }
                                     },
                                 )
                             }
@@ -407,9 +432,9 @@ fun MyPostsFeedScreen(
 
         commentsFor?.let { CommentsDialog(it, myUid, myName) { commentsFor = null } }
 
-        quoteFor?.let { q ->
+        quoteSource?.let { q ->
             AlertDialog(
-                onDismissRequest = { quoteFor = null; quoteText = "" },
+                onDismissRequest = { quoteSource = null; quoteText = "" },
                 containerColor = Color(0xFF14161C),
                 titleContentColor = NexoraColors.StarWhite,
                 textContentColor = NexoraColors.StarWhite,
@@ -439,22 +464,8 @@ fun MyPostsFeedScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        db.collection("posts").add(
-                            hashMapOf(
-                                "authorUid" to myUid,
-                                "authorName" to myName,
-                                "authorHandle" to myHandle,
-                                "text" to (quoteText.trim() + "\n\n" + q.text).trim(),
-                                "time" to System.currentTimeMillis(),
-                                "likes" to emptyList<String>(),
-                                "resignals" to emptyList<String>(),
-                                "resignalOf" to q.id,
-                                "resignalFromName" to q.name,
-                            )
-                        )
-                        db.collection("posts").document(q.id)
-                            .update("resignals", FieldValue.arrayUnion(myUid))
-                        quoteFor = null
+                        sendResignal(db, myUid, myName, myHandle, q, quoteText)
+                        quoteSource = null
                         quoteText = ""
                     }) {
                         Text(
@@ -465,7 +476,7 @@ fun MyPostsFeedScreen(
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { quoteFor = null; quoteText = "" }) {
+                    TextButton(onClick = { quoteSource = null; quoteText = "" }) {
                         Text("Cancel", color = NexoraColors.StarWhite.copy(alpha = 0.7f))
                     }
                 },
