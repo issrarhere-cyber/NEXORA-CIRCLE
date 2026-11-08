@@ -144,13 +144,17 @@ fun CommentsDialog(
                                         .clickable { openProfile(c.uid) },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Text(c.name.take(1).uppercase(), fontWeight = FontWeight.Bold)
+                                    if (com.nexora.circle.ui.drawer.AnonymousMode.isAnon(c.uid)) {
+                                        com.nexora.circle.ui.drawer.AnonAvatar(36.dp)
+                                    } else {
+                                        Text(c.name.take(1).uppercase(), fontWeight = FontWeight.Bold)
+                                    }
                                 }
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            c.name,
+                                            com.nexora.circle.ui.drawer.AnonymousMode.shownName(c.uid, c.name),
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.clickable { openProfile(c.uid) },
                                         )

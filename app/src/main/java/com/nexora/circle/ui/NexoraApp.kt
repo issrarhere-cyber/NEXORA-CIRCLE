@@ -36,6 +36,16 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
+import androidx.compose.runtime.LaunchedEffect
+import com.nexora.circle.ui.drawer.AnonymousMode
+import com.nexora.circle.ui.drawer.CustomizeThemeScreen
+import com.nexora.circle.ui.drawer.DrawerRoute
+import com.nexora.circle.ui.drawer.HelpCentreScreen
+import com.nexora.circle.ui.drawer.LearnSkillsScreen
+import com.nexora.circle.ui.drawer.MyLibraryScreen
+import com.nexora.circle.ui.drawer.NexoraDrawer
+import com.nexora.circle.ui.drawer.NexusScreen
+import com.nexora.circle.ui.drawer.SettingsScreen
 import com.nexora.circle.ui.components.NexoraIcon
 import com.nexora.circle.ui.components.NxIcon
 import com.nexora.circle.ui.components.StarfieldBackground
@@ -125,7 +135,16 @@ fun NexoraApp() {
     // Me tab sub-screens: "" = none, or "posts" / "followers" / "following" / "x:<label>"
     var meSub by rememberSaveable { mutableStateOf("") }
     var meUserUid by rememberSaveable { mutableStateOf("") }
+    // Left drawer: open/closed, and which drawer screen is open ("" = none)
+    var drawerOpen by rememberSaveable { mutableStateOf(false) }
+    var drawerRoute by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
+
+    // Anonymous Mode: load my saved switch and listen for other people's switches
+    val signedInUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+    LaunchedEffect(signedInUid) {
+        AnonymousMode.start(context, signedInUid)
+    }
 
     // While typing in Comms: hide the bottom bar and drop its padding, because the
     // chat screen already adds keyboard padding itself (otherwise the gap is counted twice).
@@ -168,6 +187,7 @@ fun NexoraApp() {
                                     beamUid = ""
                                     meSub = ""
                                     meUserUid = ""
+                                    drawerRoute = ""
                                 },
                                 icon = {
                                     TabIcon(
@@ -196,7 +216,40 @@ fun NexoraApp() {
                 bottom = if (hideBar) 0.dp else padding.calculateBottomPadding(),
             )
             Box(Modifier.fillMaxSize().padding(contentPadding)) {
-                when (selected) {
+                if (drawerRoute.isNotEmpty()) {
+                    val closeDrawerScreen = { drawerRoute = "" }
+                    when (drawerRoute) {
+                        DrawerRoute.NEXUS -> NexusScreen(onBack = closeDrawerScreen)
+                        DrawerRoute.LIBRARY -> MyLibraryScreen(onBack = closeDrawerScreen)
+                        DrawerRoute.SKILLS -> LearnSkillsScreen(onBack = closeDrawerScreen)
+                        DrawerRoute.THEME -> CustomizeThemeScreen(onBack = closeDrawerScreen)
+                        DrawerRoute.SETTINGS -> SettingsScreen(onBack = closeDrawerScreen)
+                        DrawerRoute.HELP -> HelpCentreScreen(onBack = closeDrawerScreen)
+                        DrawerRoute.FOLLOWING -> UserListScreen(
+                            title = "Following",
+                            ownerUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty(),
+                            collection = "following",
+                            onBack = closeDrawerScreen,
+                            onUserClick = { uid ->
+                                drawerRoute = ""
+                                selected = Tab.Orbit
+                                profileUid = uid
+                            },
+                        )
+                        DrawerRoute.FOLLOWERS -> UserListScreen(
+                            title = "Followers",
+                            ownerUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty(),
+                            collection = "followers",
+                            onBack = closeDrawerScreen,
+                            onUserClick = { uid ->
+                                drawerRoute = ""
+                                selected = Tab.Orbit
+                                profileUid = uid
+                            },
+                        )
+                        else -> drawerRoute = ""
+                    }
+                } else when (selected) {
                     Tab.Orbit -> {
                         if (profileUid.isNotEmpty()) {
                             UserProfileScreen(
@@ -226,6 +279,7 @@ fun NexoraApp() {
                                 onOpenSignal = { showSignal = true },
                                 onOpenNotifications = { showNotifications = true },
                                 onOpenUserProfile = { uid -> profileUid = uid },
+                                onOpenDrawer = { drawerOpen = true },
                             )
                         }
                     }
@@ -297,5 +351,22 @@ fun NexoraApp() {
                 }
             }
         }
+
+        // Left drawer (opened from the profile icon at the top left of Orbit)
+        NexoraDrawer(
+            open = drawerOpen,
+            onClose = { drawerOpen = false },
+            onProfile = {
+                drawerOpen = false
+                drawerRoute = ""
+                meSub = ""
+                meUserUid = ""
+                selected = Tab.Profile
+            },
+            onNavigate = { route ->
+                drawerOpen = false
+                drawerRoute = route
+            },
+        )
     }
 }
