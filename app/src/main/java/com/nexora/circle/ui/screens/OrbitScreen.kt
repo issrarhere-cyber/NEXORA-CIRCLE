@@ -524,7 +524,7 @@ fun OrbitScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(NexoraColors.Divider)
+                    .background(Color(0x1FFFFFFF))
             )
 
             PullToRefreshBox(

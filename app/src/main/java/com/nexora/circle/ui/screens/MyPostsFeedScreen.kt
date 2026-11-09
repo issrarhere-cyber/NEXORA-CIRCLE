@@ -266,7 +266,7 @@ fun MyPostsFeedScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(NexoraColors.Divider)
+                    .background(Color(0x1FFFFFFF))
             )
 
             if (errorMsg.isNotEmpty()) {
@@ -427,7 +427,7 @@ fun MyPostsFeedScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(1.dp)
-                                .background(NexoraColors.Divider)
+                                .background(Color(0x1FFFFFFF))
                         )
                     }
                 }
