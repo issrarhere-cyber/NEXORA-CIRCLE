@@ -249,7 +249,7 @@ private fun SignalDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .clip(shape)
-                .background(Color(0xFF14161C))
+                .background(NexoraColors.Panel)
                 .border(1.dp, NexoraColors.PlasmaCyan.copy(alpha = 0.25f), shape)
                 .padding(horizontal = 20.dp, vertical = 22.dp),
         ) {
@@ -342,6 +342,7 @@ fun OrbitScreen(
     onOpenSignal: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
     onOpenUserProfile: (String) -> Unit = {},
+    onOpenDrawer: () -> Unit = {},
     signalCount: Int = 0,
     beamCount: Int = 0,
     notifCount: Int = 0,
@@ -466,8 +467,12 @@ fun OrbitScreen(
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(modifier = Modifier.clickable { onOpenProfile() }) {
-                    Avatar(photo, initial, 36.dp)
+                Box(modifier = Modifier.clickable { onOpenDrawer() }) {
+                    if (com.nexora.circle.ui.drawer.AnonymousMode.enabled) {
+                        com.nexora.circle.ui.drawer.AnonAvatar(36.dp)
+                    } else {
+                        Avatar(photo, initial, 36.dp)
+                    }
                 }
                 // Center: pink orbit logo + NEXORA
                 Box(
@@ -628,11 +633,15 @@ fun OrbitScreen(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     Box(modifier = Modifier.clickable { openAuthor() }) {
-                                        Avatar(
-                                            if (d.uid.isNotEmpty() && d.uid == myUid) photo else null,
-                                            (d.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
-                                            44.dp,
-                                        )
+                                        if (com.nexora.circle.ui.drawer.AnonymousMode.isAnon(d.uid)) {
+                                            com.nexora.circle.ui.drawer.AnonAvatar(44.dp)
+                                        } else {
+                                            Avatar(
+                                                if (d.uid.isNotEmpty() && d.uid == myUid) photo else null,
+                                                (d.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
+                                                44.dp,
+                                            )
+                                        }
                                     }
                                     Column(modifier = Modifier.weight(1f)) {
                                         PostCardText(d) { openAuthor() }

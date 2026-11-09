@@ -98,7 +98,7 @@ private const val USERNAME_PREFIX = "@"
 private const val USERNAME_MIN = 3
 private const val USERNAME_MAX = 28
 
-private val CardBg = Color(0xFF121212)
+private val CardBg: Color get() = NexoraColors.Panel
 private val CoverBg = Color(0xFF0D2A2F)
 private val LogoutRed = Color(0xFFFF4D6D)
 

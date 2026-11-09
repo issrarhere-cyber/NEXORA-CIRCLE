@@ -67,13 +67,13 @@ fun ProfileSubScreen(label: String, onBack: () -> Unit) {
         l.contains("help") -> PfScaffold(label, onBack) { PfHelp() }
         l.contains("about") -> PfScaffold(label, onBack) {
             PfCard {
-                Text("Nexora Circle", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("Nexora Circle", color = NexoraColors.StarWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
                 Text("Version 1.0", color = NexoraColors.Muted)
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "A space-themed social app: Orbit, Comms, Arcade and Nexora-X in one place.",
-                    color = Color.White,
+                    color = NexoraColors.StarWhite,
                 )
             }
         }
@@ -87,7 +87,7 @@ fun ProfileSubScreen(label: String, onBack: () -> Unit) {
 private fun PfScaffold(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
         TextButton(onClick = onBack) { Text("← Back", color = NexoraColors.PlasmaCyan) }
-        Text(title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text(title, color = NexoraColors.StarWhite, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), content = content)
     }
@@ -122,7 +122,7 @@ private fun PfToggle(key: String, label: String, default: Boolean = true) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(label, color = Color.White, modifier = Modifier.weight(1f))
+        Text(label, color = NexoraColors.StarWhite, modifier = Modifier.weight(1f))
         Switch(checked = on, onCheckedChange = {
             on = it
             prefs.edit().putBoolean(key, it).apply()
@@ -134,7 +134,7 @@ private fun PfToggle(key: String, label: String, default: Boolean = true) {
 private fun PfInfoRow(label: String, value: String) {
     Column(Modifier.padding(vertical = 6.dp)) {
         Text(label, color = NexoraColors.Muted, fontSize = 12.sp)
-        Text(value.ifEmpty { "-" }, color = Color.White, fontSize = 16.sp)
+        Text(value.ifEmpty { "-" }, color = NexoraColors.StarWhite, fontSize = 16.sp)
     }
 }
 
@@ -200,7 +200,7 @@ private fun PfAppearance() {
                     mode = key
                     prefs.edit().putString("theme_mode", key).apply()
                 })
-                Text(text, color = Color.White)
+                Text(text, color = NexoraColors.StarWhite)
             }
         }
     }
@@ -215,7 +215,7 @@ private fun PfHelp() {
     )
     faqs.forEach { (q, a) ->
         PfCard {
-            Text(q, color = Color.White, fontWeight = FontWeight.Bold)
+            Text(q, color = NexoraColors.StarWhite, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             Text(a, color = NexoraColors.Muted)
         }

@@ -197,7 +197,7 @@ fun PostCardText(d: PostDisplay, onAuthorClick: () -> Unit) {
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                d.name.ifBlank { "Explorer" },
+                com.nexora.circle.ui.drawer.AnonymousMode.shownName(d.uid, d.name.ifBlank { "Explorer" }),
                 color = NexoraColors.StarWhite,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
@@ -207,13 +207,13 @@ fun PostCardText(d: PostDisplay, onAuthorClick: () -> Unit) {
                     .weight(1f, fill = false)
                     .clickable { onAuthorClick() },
             )
-            if (isFounder(d.uid)) {
+            if (isFounder(d.uid) && !com.nexora.circle.ui.drawer.AnonymousMode.isAnon(d.uid)) {
                 Spacer(Modifier.width(6.dp))
                 FounderBadge(size = 18.dp)
             }
         }
         Text(
-            (if (d.handle.isNotBlank()) "X.${d.handle} · " else "") + postAgo(d.time),
+            (if (d.handle.isNotBlank() && !com.nexora.circle.ui.drawer.AnonymousMode.isAnon(d.uid)) "X.${d.handle} · " else "") + postAgo(d.time),
             color = NexoraColors.StarWhite.copy(alpha = 0.6f),
             fontSize = 13.sp,
         )

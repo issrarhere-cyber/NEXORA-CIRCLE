@@ -346,11 +346,15 @@ fun MyPostsFeedScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Box(modifier = Modifier.clickable { openAuthor() }) {
-                                MyPostAvatar(
-                                    if (d.uid.isNotEmpty() && d.uid == myUid) myPhoto else null,
-                                    (d.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
-                                    44.dp,
-                                )
+                                if (com.nexora.circle.ui.drawer.AnonymousMode.isAnon(d.uid)) {
+                                    com.nexora.circle.ui.drawer.AnonAvatar(44.dp)
+                                } else {
+                                    MyPostAvatar(
+                                        if (d.uid.isNotEmpty() && d.uid == myUid) myPhoto else null,
+                                        (d.name.firstOrNull()?.uppercaseChar() ?: '?').toString(),
+                                        44.dp,
+                                    )
+                                }
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 PostCardText(d) { openAuthor() }
@@ -435,7 +439,7 @@ fun MyPostsFeedScreen(
         quoteSource?.let { q ->
             AlertDialog(
                 onDismissRequest = { quoteSource = null; quoteText = "" },
-                containerColor = Color(0xFF14161C),
+                containerColor = NexoraColors.Panel,
                 titleContentColor = NexoraColors.StarWhite,
                 textContentColor = NexoraColors.StarWhite,
                 title = { Text("Quote", fontWeight = FontWeight.Bold) },

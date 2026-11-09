@@ -1,0 +1,94 @@
+NEXORA-CIRCLE: Firestore rules for the drawer features
+=======================================================
+
+WHERE: Firebase Console > Firestore Database > Rules.
+Do NOT replace your whole rules file. Paste the block below INSIDE your existing
+   match /databases/{database}/documents { ... }
+just before its last closing brace. If you already have functions named
+signedIn / isOwner / isNexusAdmin, rename mine.
+
+FIRST: make yourself an admin so you can create Nexus rooms.
+  Firestore Database > Data > users > (your user id) > Add field
+  isAdmin   (boolean)   true
+(The founder account is admin automatically in the app, but the rules need
+this field, so add it for the founder account too.)
+
+--------------------------- PASTE FROM HERE ---------------------------
+
+    function nxSignedIn() { return request.auth != null; }
+
+    function nxAdmin() {
+      return nxSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true;
+    }
+
+    function nxHost(roomId) {
+      return nxSignedIn() &&
+        get(/databases/$(database)/documents/nexusRooms/$(roomId)).data.hostUid == request.auth.uid;
+    }
+
+    // Anonymous Mode switches (one small document per person who turned it on)
+    match /anonymousUsers/{uid} {
+      allow read: if nxSignedIn();
+      allow write: if nxSignedIn() && request.auth.uid == uid;
+    }
+
+    // Help Centre > Contact Support
+    match /supportTickets/{id} {
+      allow create: if nxSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow read: if nxSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // NEXORA NEXUS
+    match /nexusRooms/{roomId} {
+      allow read: if nxSignedIn();
+      allow create: if nxAdmin()
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.maxMembers <= 5000;
+      // admin / host can change anything (for example end the room)
+      allow update: if nxAdmin() || resource.data.hostUid == request.auth.uid;
+      // everyone else may only move the live counter by exactly one
+      allow update: if nxSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount'])
+        && (request.resource.data.memberCount - resource.data.memberCount) in [-1, 1]
+        && request.resource.data.memberCount >= 0
+        && request.resource.data.memberCount <= resource.data.maxMembers;
+
+      match /members/{uid} {
+        allow read: if nxSignedIn();
+        // joining: a listener, or the host
+        allow create: if nxSignedIn() && request.auth.uid == uid
+          && ((request.resource.data.canSpeak == false && request.resource.data.role == 'listener')
+              || nxHost(roomId));
+        // a member may only raise/lower the hand and switch the mic
+        allow update: if nxSignedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['handRaised', 'micOn'])
+          && (request.resource.data.micOn == false
+              || (resource.data.canSpeak == true && resource.data.muted == false));
+        // admin / host: allow to speak, mute, move to listeners
+        allow update: if nxAdmin() || nxHost(roomId);
+        // leave, or be removed
+        allow delete: if (nxSignedIn() && request.auth.uid == uid) || nxAdmin() || nxHost(roomId);
+      }
+
+      match /kicked/{uid} {
+        allow read: if nxSignedIn();
+        allow write: if nxAdmin() || nxHost(roomId);
+      }
+
+      match /messages/{id} {
+        allow read: if nxSignedIn();
+        allow create: if nxSignedIn() && request.resource.data.uid == request.auth.uid
+          && request.resource.data.text.size() <= 500;
+        allow delete: if nxAdmin() || nxHost(roomId);
+      }
+    }
+
+--------------------------- PASTE UNTIL HERE --------------------------
+
+Honest limits
+- Nexus voice: rooms, join/leave, live count, speaker permission, mute, remove and
+  text chat are real (Firestore). Audio itself needs a voice service (Agora, LiveKit,
+  ZEGOCLOUD). The app has the hook (NexusVoice.engine) but no service is connected,
+  and the room screen says so.
+- Anonymous Mode hides your name for OTHER people only after the anonymousUsers rule above is published.
